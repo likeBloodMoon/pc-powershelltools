@@ -2,7 +2,7 @@
 A PowerShell GUI tool for cleaning, optimizing, and configuring Windows with one click. Includes system cleanup, network tools, Windows tweaks, and more.
 # This tool is provided as-is. I am not liable for any system issues or damages resulting from its use.
 
-#Grab the script, run PowerShell as admin, and launch .\pc-cleanup.ps1.
+# Grab the script, run PowerShell as admin, and launch .\pc-cleanup.ps1.
 
 
 - System Cleanup
