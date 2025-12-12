@@ -50,3 +50,27 @@ Installs common applications via **winget**:
 - VLC Media Player  
 - Visual Studio Code  
 
+
+
+---
+
+## Roadmap
+
+### v0.2 (Planned)
+- UI polish and layout improvements  
+- More Windows preference toggles  
+  - Taskbar and Start Menu tweaks  
+  - Disable unnecessary background features  
+- Network profiles (Home / Work presets)  
+- Export logs to file and copy from GUI  
+- Safer confirmations for destructive actions  
+- Performance and stability improvements  
+
+### Future Ideas
+- Preset profiles (Quick cleanup, Full maintenance)  
+- Config file support (JSON)  
+- Portable executable build  
+- Additional system diagnostics  
+
+Suggestions and contributions are welcome.
+
