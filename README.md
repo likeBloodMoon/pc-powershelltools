@@ -14,7 +14,8 @@ A one-click GUI for cleaning, optimizing, and configuring Windows.
 
 #### Getting Started
 1. Run this command in **PowerShell as Administrator**: 
-Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -STA -ExecutionPolicy Bypass -Command $s=irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/main/pc-cleanuptool.ps1; iex
+`Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -STA -ExecutionPolicy Bypass -Command `$s=irm https://raw.githubusercontent.com/likeBloodMoon/pc-cleanuptool/main/pc-cleanuptool.ps1; iex `$s"`
+
 
 
 #### Alternative
