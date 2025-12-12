@@ -14,7 +14,10 @@ A one-click GUI for cleaning, optimizing, and configuring Windows.
 
 #### Getting Started
 1. Run this command in **PowerShell as Administrator**: 
+## Cleanuptool:
 `irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/main/pc-cleanuptool.ps1 | iex`
+## NetDiag:
+`irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/main/pc-netdiag.ps1 | iex`
 
 
 
