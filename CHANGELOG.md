@@ -145,6 +145,31 @@ roughly double the commands.
 - `Test-PCMtu` no longer uses `GetNewClosure()`. It rebinds a scriptblock to a
   scope detached from the module's session state, so the probe could not see the
   private helper it needed and every call failed.
+- `Start-PCTools` could not find the GUI in the module that actually ships. It
+  resolved the shell as `$PSScriptRoot\..\Shell`, which is correct in the source
+  tree - the function lives in `Public/` - and wrong in the compiled module,
+  where `$PSScriptRoot` is already the module root. Every Gallery and archive
+  install would have thrown "the shell is missing" on the command this release
+  is named after.
+- `Register-PCScheduledMaintenance` registered a task that imported PCTools by
+  name rather than by path, for the same reason: two parents up from
+  `$PSScriptRoot` landed outside the versioned module folder. A scheduled task
+  runs as SYSTEM, whose module path does not include a CurrentUser install, so
+  every task registered from a normal install would have failed before running
+  its profile. Both now resolve from
+  `$ExecutionContext.SessionState.Module.ModuleBase`, correct in either layout.
+- `Invoke-PCParallel` discarded results that had already completed once the
+  batch deadline passed. The tasks run concurrently, so one slow item early in
+  the list could exhaust the budget while every later item had finished - and
+  those finished results were then reported as timeouts. Completion is now
+  checked before the budget.
+- `docs/COMMANDS.md` was generated with a BOM on Windows PowerShell 5.1 and
+  without one on PowerShell 7, so the CI freshness check called it stale
+  depending only on which host generated it. It is now written as UTF-8 without
+  a BOM, with LF endings, on every host.
+- The release notes named `pc-tools-v0.5.0.zip`; the build stages the archive
+  without the tag's leading `v`, so the documented verification step named a
+  file that is not attached.
 
 ## [0.4.0] - 2026-01-15
 

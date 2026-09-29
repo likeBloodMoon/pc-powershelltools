@@ -205,7 +205,7 @@ Describe 'Maintenance profiles' {
 
     It 'throws a helpful error for an unknown profile' {
         { Get-PCMaintenanceProfile -Name 'Nonexistent' } |
-            Should -Throw -ExpectedMessage '*Available: Quick, Recommended, Full, NetworkRepair*'
+            Should -Throw -ExpectedMessage '*Available: Quick, Recommended, Full, Storage, Health, Weekly, NetworkRepair*'
     }
 
     It 'keeps Prefetch cleanup out of every built-in profile' {

@@ -83,8 +83,8 @@ Describe 'install.ps1' {
         # Every URL in the installer must point at this project, either
         # literally or through $script:Repository. A fetch from anywhere else in
         # a script people are invited to pipe into iex would be indefensible.
-        $urls = [regex]::Matches($script:InstallText, 'https?://[^\s''")]+') |
-            ForEach-Object { $_.Value }
+        $urls = @([regex]::Matches($script:InstallText, 'https?://[^\s''")]+') |
+            ForEach-Object { $_.Value })
 
         $urls.Count | Should -BeGreaterThan 0
 
@@ -103,8 +103,10 @@ Describe 'The pinned install command' {
     It 'is pinned to a tag in the README, never to main' {
         $readme = Get-Content -LiteralPath (Join-Path $script:RepoRoot 'README.md') -Raw
 
-        $installLines = [regex]::Matches($readme, '(?m)^.*install\.ps1.*$') |
-            ForEach-Object { $_.Value }
+        # @() for the same reason the module code needs it: a single match
+        # assigns a scalar, and .Count on a string throws under strict mode.
+        $installLines = @([regex]::Matches($readme, '(?m)^.*install\.ps1.*$') |
+            ForEach-Object { $_.Value })
 
         $installLines.Count | Should -BeGreaterThan 0
 
@@ -121,9 +123,11 @@ Describe 'The pinned install command' {
         $manifest = Import-PowerShellDataFile -Path (Join-Path $script:RepoRoot 'src/PCTools/PCTools.psd1')
         $readme = Get-Content -LiteralPath (Join-Path $script:RepoRoot 'README.md') -Raw
 
-        $tags = [regex]::Matches($readme, 'pc-powershelltools/v(\d+\.\d+\.\d+)/install\.ps1') |
+        # One distinct tag is the expected case, and Sort-Object -Unique then
+        # returns a bare string rather than an array - so this needs @() too.
+        $tags = @([regex]::Matches($readme, 'pc-powershelltools/v(\d+\.\d+\.\d+)/install\.ps1') |
             ForEach-Object { $_.Groups[1].Value } |
-            Sort-Object -Unique
+            Sort-Object -Unique)
 
         $tags.Count | Should -BeGreaterThan 0
         foreach ($tag in $tags) {

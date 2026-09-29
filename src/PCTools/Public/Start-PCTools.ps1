@@ -49,8 +49,17 @@ function Start-PCTools {
         [switch]$Elevate
     )
 
-    $shellPath = Join-Path $PSScriptRoot '..\Shell\Start-PCToolsShell.ps1'
-    $shellPath = [System.IO.Path]::GetFullPath($shellPath)
+    # Resolved from the module's own base, never by walking up from
+    # $PSScriptRoot. The two layouts do not agree: in the source tree this
+    # function lives in Public/ and the shell is one level up, but the shipped
+    # module is compiled into a single PCTools.psm1 at the module root, where
+    # '..\Shell' points at a sibling of the module folder that does not exist.
+    # That version of this line meant Start-PCTools threw "shell is missing" on
+    # every Gallery and archive install - which is to say, on every install.
+    $moduleBase = $ExecutionContext.SessionState.Module.ModuleBase
+    if (-not $moduleBase) { $moduleBase = Split-Path -Parent $PSScriptRoot }
+
+    $shellPath = [System.IO.Path]::GetFullPath((Join-Path $moduleBase 'Shell\Start-PCToolsShell.ps1'))
 
     if (-not (Test-Path -LiteralPath $shellPath)) {
         throw "The PC Tools shell is missing from the module. Expected it at: $shellPath"

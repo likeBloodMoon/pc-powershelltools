@@ -91,8 +91,15 @@ function Register-PCScheduledMaintenance {
 
         if (-not $ReportPath) { $ReportPath = Join-Path $script:PCDataRoot 'reports' }
 
-        $moduleBase = Split-Path -Parent $PSScriptRoot
-        $moduleBase = Split-Path -Parent $moduleBase
+        # From the module's own base, not by walking up from $PSScriptRoot: in
+        # the compiled module that this function ships in, $PSScriptRoot is
+        # already the module root, so two parents pointed outside the versioned
+        # module folder entirely. The task then fell back to Import-Module by
+        # name and failed, because it runs as SYSTEM and a CurrentUser install
+        # is not on SYSTEM's module path.
+        $moduleBase = $ExecutionContext.SessionState.Module.ModuleBase
+        if (-not $moduleBase) { $moduleBase = Split-Path -Parent (Split-Path -Parent $PSScriptRoot) }
+
         $manifest = Join-Path $moduleBase 'PCTools.psd1'
 
         # Import by path rather than by name: the task runs as SYSTEM or as a

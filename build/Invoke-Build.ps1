@@ -381,7 +381,14 @@ function Invoke-DocsTask {
     if (-not (Test-Path $docsDir)) { New-Item -ItemType Directory -Path $docsDir -Force | Out-Null }
 
     $path = Join-Path $docsDir 'COMMANDS.md'
-    $lines | Set-Content -LiteralPath $path -Encoding UTF8
+
+    # UTF-8 without a BOM, and LF endings, written the same way on every host.
+    # Set-Content -Encoding UTF8 writes a BOM on Windows PowerShell 5.1 and none
+    # on PowerShell 7, so the generated file differed by three bytes depending
+    # on who ran the task - which is exactly what the CI freshness check then
+    # reported as "out of date".
+    $text = ($lines -join "`n") + "`n"
+    [System.IO.File]::WriteAllText($path, $text, [System.Text.UTF8Encoding]::new($false))
 
     Write-Host "Wrote $path ($($commands.Count) commands)" -ForegroundColor Green
 }

@@ -88,9 +88,11 @@ jobs:
         shell: powershell
         run: |
           ./build/Invoke-Build.ps1 -Task Docs
-          $diff = git diff --name-only -- docs/COMMANDS.md
+          # --ignore-cr-at-eol so a checkout that materialised CRLF does not
+          # read as a stale reference; the task itself writes LF.
+          $diff = git diff --ignore-cr-at-eol --name-only -- docs/COMMANDS.md
           if ($diff) {
-              git --no-pager diff -- docs/COMMANDS.md
+              git --no-pager diff --ignore-cr-at-eol -- docs/COMMANDS.md
               throw 'docs/COMMANDS.md is out of date. Run ./build/Invoke-Build.ps1 -Task Docs and commit the result.'
           }
           Write-Host 'Command reference is up to date.'

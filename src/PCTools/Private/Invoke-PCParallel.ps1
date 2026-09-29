@@ -161,9 +161,19 @@ function Invoke-PCParallel {
             $output = $null
             $failure = $null
 
+            # Completion is checked before the budget. The tasks run
+            # concurrently, so one slow item early in the list can exhaust the
+            # deadline while every later item has already finished; treating a
+            # spent budget as a timeout without looking would throw away those
+            # finished results and report them as failures.
             $remaining = [int]([math]::Max(0, ($deadline - (Get-Date)).TotalMilliseconds))
+            $finished = $task.Handle.IsCompleted
 
-            if ($remaining -le 0 -or -not $task.Handle.AsyncWaitHandle.WaitOne($remaining)) {
+            if (-not $finished -and $remaining -gt 0) {
+                $finished = $task.Handle.AsyncWaitHandle.WaitOne($remaining)
+            }
+
+            if (-not $finished) {
                 try { $task.Shell.Stop() } catch { }
                 $failure = "Timed out after $TimeoutSeconds seconds."
             }

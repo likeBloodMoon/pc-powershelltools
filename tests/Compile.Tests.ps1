@@ -89,6 +89,59 @@ Describe 'Compiled module' {
         }
     }
 
+    It 'lets the shipped module find its own GUI shell' {
+        # The layout regression that made v0.5's headline feature unusable.
+        # Start-PCTools resolved the shell as "$PSScriptRoot\..\Shell", which is
+        # right in the source tree - the function lives in Public/ - and wrong
+        # in the compiled module, where $PSScriptRoot is already the module root
+        # and '..' points at a sibling folder that does not exist. Every Gallery
+        # and archive install threw "the shell is missing".
+        Import-Module $script:CompiledManifest -Force
+
+        $resolved = & (Get-Module PCTools) {
+            $base = $ExecutionContext.SessionState.Module.ModuleBase
+            Join-Path $base 'Shell/Start-PCToolsShell.ps1'
+        }
+
+        Test-Path -LiteralPath $resolved | Should -BeTrue -Because 'Start-PCTools resolves the shell from exactly this path'
+        Remove-Module PCTools -Force
+    }
+
+    It 'resolves its own manifest for a scheduled task to import' {
+        # Same root cause, different symptom: a scheduled task runs as SYSTEM,
+        # whose module path does not include a CurrentUser install, so the
+        # registered command must import the manifest by full path.
+        Import-Module $script:CompiledManifest -Force
+
+        $manifest = & (Get-Module PCTools) {
+            Join-Path $ExecutionContext.SessionState.Module.ModuleBase 'PCTools.psd1'
+        }
+
+        Test-Path -LiteralPath $manifest | Should -BeTrue
+        Remove-Module PCTools -Force
+    }
+
+    It 'resolves paths from the module base, not by walking up from $PSScriptRoot' {
+        # The two layouts nest these functions at different depths, so any
+        # parent-walking arithmetic is correct in one and wrong in the other.
+        foreach ($file in 'Public/Start-PCTools.ps1', 'Public/Automation/Register-PCScheduledMaintenance.ps1') {
+            $text = Get-Content -LiteralPath (Join-Path $script:RepoRoot "src/PCTools/$file") -Raw
+            $text | Should -Match 'SessionState\.Module\.ModuleBase' -Because "$file must not depend on its own nesting depth"
+        }
+    }
+
+    It 'generates docs/COMMANDS.md identically on every host' {
+        # It was written with Set-Content -Encoding UTF8, which emits a BOM on
+        # Windows PowerShell 5.1 and none on PowerShell 7 - so the CI freshness
+        # check reported the file stale purely because of who generated it.
+        $docs = Join-Path $script:RepoRoot 'docs/COMMANDS.md'
+        if (-not (Test-Path -LiteralPath $docs)) { return }
+
+        $bytes = [System.IO.File]::ReadAllBytes($docs) | Select-Object -First 3
+        $hasBom = $bytes.Count -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+        $hasBom | Should -BeFalse -Because 'a BOM makes the generated file host-dependent'
+    }
+
     It 'keeps the private helpers private' {
         Import-Module $script:CompiledManifest -Force
         $exported = (Get-Module PCTools).ExportedFunctions.Keys

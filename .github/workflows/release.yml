@@ -139,7 +139,7 @@ jobs:
             Every file below is listed in `SHA256SUMS`:
 
             ```powershell
-            (Get-FileHash pc-tools-${{ github.ref_name }}.zip -Algorithm SHA256).Hash.ToLower()
+            (Get-FileHash pc-tools-${{ steps.version.outputs.version }}.zip -Algorithm SHA256).Hash.ToLower()
             # compare against the matching line in SHA256SUMS
             ```
 

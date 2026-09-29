@@ -138,6 +138,33 @@ Describe 'Invoke-PCParallel' {
         @($result | Where-Object { $_.Error }).Count | Should -Be 2
     }
 
+    It 'keeps results that finished before the deadline expired' {
+        # Tasks run concurrently, so a slow first item can burn the whole batch
+        # budget while every later item has already completed. Treating an
+        # exhausted budget as a timeout without checking completion discarded
+        # those finished results and reported them as failures - silently
+        # corrupting the output of callers like Test-PCConnectivity, where the
+        # gateway probe is both first and the one most likely to hang.
+        $result = & $script:Module {
+            Invoke-PCParallel -InputObject (1..4) -ScriptBlock {
+                param($n)
+                if ($n -eq 1) { Start-Sleep -Seconds 30 }
+                "done$n"
+            } -ThrottleLimit 4 -TimeoutSeconds 3
+        }
+
+        @($result).Count | Should -Be 4
+
+        # The slow one times out; the three fast ones keep their results.
+        $result[0].Output | Should -BeNullOrEmpty
+        $result[0].Error | Should -Not -BeNullOrEmpty
+
+        foreach ($index in 1, 2, 3) {
+            $result[$index].Output | Should -Be "done$($index + 1)"
+            $result[$index].Error | Should -BeNullOrEmpty
+        }
+    }
+
     It 'runs an init script in every runspace' {
         $result = & $script:Module {
             $init = [scriptblock]::Create('function Get-Answer { 42 }')
