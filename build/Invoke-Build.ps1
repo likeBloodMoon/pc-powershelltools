@@ -52,8 +52,11 @@ function Write-Step {
 }
 
 function Get-SourceFile {
+    # obj/ holds the compiled module, which is generated from these same files.
+    # Including it would mean every finding in module code was reported twice,
+    # the second time against a file nobody edits.
     Get-ChildItem -Path $RepoRoot -Recurse -Include '*.ps1', '*.psm1', '*.psd1' -File |
-        Where-Object { $_.FullName -notmatch '[\\/](out|dist|\.git)[\\/]' }
+        Where-Object { $_.FullName -notmatch '[\\/](out|obj|dist|\.git)[\\/]' }
 }
 
 function Invoke-TestTask {
@@ -89,8 +92,15 @@ function Invoke-AnalyzeTask {
     Import-Module PSScriptAnalyzer -Force
 
     $settings = Join-Path $RepoRoot 'PSScriptAnalyzerSettings.psd1'
+
+    # obj/ is excluded for the same reason as in Get-SourceFile: it is the
+    # compiled module, generated from the sources already being analyzed. The
+    # test suite builds it - Compile.Tests does - so on a machine that has run
+    # the tests it exists and silently doubled the count of every finding in
+    # module code. That is what pushed CI from 197 warnings to 275 and over
+    # budget, against a tree whose sources had not changed.
     $results = Invoke-ScriptAnalyzer -Path $RepoRoot -Recurse -Settings $settings |
-        Where-Object { $_.ScriptPath -notmatch '[\\/](out|dist)[\\/]' }
+        Where-Object { $_.ScriptPath -notmatch '[\\/](out|obj|dist)[\\/]' }
 
     if (-not $results) {
         Write-Host 'PSScriptAnalyzer: clean.' -ForegroundColor Green

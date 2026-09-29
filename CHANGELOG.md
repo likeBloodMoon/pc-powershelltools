@@ -174,6 +174,11 @@ roughly double the commands.
   and `{1}` instead of the profile and action names. The format operator binds
   tighter than string concatenation, so `"a {0} " + "b {1}" -f $x, $y` formats
   only the second string; the concatenation needs its own parentheses.
+- The build's Analyze task and the syntax test both scanned `obj/`, which holds
+  the compiled module generated from the same sources. Every finding in module
+  code was therefore reported twice, and the number of syntax tests discovered
+  depended on whether a build had run. Generated output is now excluded from
+  both.
 
 ## [0.4.0] - 2026-01-15
 

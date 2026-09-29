@@ -11,8 +11,11 @@
 BeforeDiscovery {
     $repoRoot = Split-Path -Parent $PSScriptRoot
 
+    # obj/ excluded too: it is the generated module, and whether it exists
+    # depends on whether a build has run - which made the number of tests
+    # discovered differ between a fresh checkout and a working tree.
     $script:SourceFiles = Get-ChildItem -Path $repoRoot -Recurse -Include '*.ps1', '*.psm1' -File |
-        Where-Object { $_.FullName -notmatch '[\\/](out|dist|\.git)[\\/]' } |
+        Where-Object { $_.FullName -notmatch '[\\/](out|obj|dist|\.git)[\\/]' } |
         ForEach-Object { @{ Path = $_.FullName; Name = $_.Name } }
 }
 
