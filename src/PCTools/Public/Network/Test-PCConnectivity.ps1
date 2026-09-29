@@ -13,6 +13,12 @@ function Test-PCConnectivity {
         broken" produce very different first failures, and the original printed
         the results in whatever order the tests were written.
 
+        The probes run concurrently and are then sorted back into layer order.
+        Ordering the *output* is the diagnostic value; ordering the *execution*
+        only ever cost time, and on a broken network it cost the most - nine
+        probes each waiting out its own timeout, one after another. The wall
+        clock is now the slowest single probe rather than the sum.
+
     .PARAMETER DnsName
         Names to resolve. Defaults to two well-known hosts.
 
@@ -46,54 +52,120 @@ function Test-PCConnectivity {
         }
     }
 
-    # 1. Adapter
+    # 1. Adapter. This one is not a probe and it decides what the gateway probe
+    # aims at, so it stays sequential and first.
     $connected = @(Get-PCNetworkAdapter -ConnectedOnly)
     & $emit 'Adapter' 'Local adapters' ($connected.Count -gt 0) `
         $(if ($connected.Count -gt 0) { "$($connected.Count) adapter(s) up: $(($connected.Name) -join ', ')" }
           else { 'No adapter is up' }) $null
 
-    # 2. Gateway
     $gateway = ($connected | Where-Object Gateway | Select-Object -First 1).Gateway
     if ($gateway) { $gateway = ($gateway -split ',')[0].Trim() }
 
+    # Everything below is independent, so describe the probes as data and run
+    # the lot at once. Layer is carried on each descriptor and used to restore
+    # the diagnostic ordering afterwards.
+    $probes = [System.Collections.Generic.List[object]]::new()
+
     if ($gateway) {
-        $reply = Test-PCPing -Target $gateway -TimeoutSeconds $TimeoutSeconds
-        & $emit 'Gateway' $gateway $reply.Success $reply.Detail $reply.LatencyMs
-    }
-    else {
-        & $emit 'Gateway' '(none)' $false 'No default gateway is configured' $null
+        $probes.Add(@{ Layer = 'Gateway'; Kind = 'Ping'; Target = $gateway })
     }
 
-    # 3. Internet routing, by IP so DNS cannot mask a routing failure
+    # Internet routing is probed by IP so DNS cannot mask a routing failure.
     foreach ($target in @('1.1.1.1', '8.8.8.8')) {
-        $reply = Test-PCPing -Target $target -TimeoutSeconds $TimeoutSeconds
-        & $emit 'Internet' $target $reply.Success $reply.Detail $reply.LatencyMs
+        $probes.Add(@{ Layer = 'Internet'; Kind = 'Ping'; Target = $target })
     }
 
-    # 4. DNS resolution
     foreach ($name in $DnsName) {
-        $resolved = $null
-        try {
-            $records = Resolve-DnsName -Name $name -Type A -DnsOnly -ErrorAction Stop |
-                Where-Object { $_.IPAddress }
-            $resolved = ($records.IPAddress) -join ', '
-        }
-        catch {
-            try {
-                $resolved = ([System.Net.Dns]::GetHostAddresses($name) |
-                    Where-Object AddressFamily -eq 'InterNetwork' |
-                    ForEach-Object IPAddressToString) -join ', '
-            }
-            catch { $resolved = $null }
-        }
-
-        & $emit 'DNS' $name ([bool]$resolved) `
-            $(if ($resolved) { "Resolved to $resolved" } else { 'Resolution failed' }) $null
+        $probes.Add(@{ Layer = 'DNS'; Kind = 'Dns'; Target = $name })
     }
 
-    # 5. TCP reachability
     foreach ($endpoint in @(@{ Host = 'www.google.com'; Port = 443 }, @{ Host = '1.1.1.1'; Port = 53 })) {
-        $result = Test-PCTcpPort -TargetHost $endpoint.Host -Port $endpoint.Port -TimeoutSeconds $TimeoutSeconds
-        & $emit 'TCP' "$($endpoint.Host):$($endpoint.Port)" $result.Success $result.Detail $result.LatencyMs
+        $probes.Add(@{ Layer = 'TCP'; Kind = 'Tcp'; Target = $endpoint.Host; Port = $endpoint.Port })
+    }
+
+    # The probe helpers travel into the runspaces as source rather than being
+    # reimplemented here, so there is still exactly one ping implementation.
+    $init = Get-PCFunctionSource -Name 'Test-PCPing', 'Test-PCTcpPort'
+
+    $probeBody = {
+        param($Probe, $Timeout)
+
+        switch ($Probe.Kind) {
+            'Ping' {
+                $reply = Test-PCPing -Target $Probe.Target -TimeoutSeconds $Timeout
+                @{ Success = $reply.Success; Detail = $reply.Detail; LatencyMs = $reply.LatencyMs }
+            }
+            'Tcp' {
+                $result = Test-PCTcpPort -TargetHost $Probe.Target -Port $Probe.Port -TimeoutSeconds $Timeout
+                @{ Success = $result.Success; Detail = $result.Detail; LatencyMs = $result.LatencyMs }
+            }
+            'Dns' {
+                $resolved = $null
+                try {
+                    $records = Resolve-DnsName -Name $Probe.Target -Type A -DnsOnly -ErrorAction Stop |
+                        Where-Object { $_.IPAddress }
+                    $resolved = ($records.IPAddress) -join ', '
+                }
+                catch {
+                    # Resolve-DnsName is Windows-only and can fail for reasons
+                    # unrelated to DNS being broken. The framework resolver is
+                    # the second opinion before calling resolution failed.
+                    try {
+                        $resolved = ([System.Net.Dns]::GetHostAddresses($Probe.Target) |
+                            Where-Object AddressFamily -eq 'InterNetwork' |
+                            ForEach-Object IPAddressToString) -join ', '
+                    }
+                    catch { $resolved = $null }
+                }
+
+                @{
+                    Success   = [bool]$resolved
+                    Detail    = if ($resolved) { "Resolved to $resolved" } else { 'Resolution failed' }
+                    LatencyMs = $null
+                }
+            }
+        }
+    }
+
+    # One timeout for the batch, with headroom: the probes overlap, so the batch
+    # cannot legitimately need more than a single probe's budget plus startup.
+    $batchTimeout = [math]::Max(30, $TimeoutSeconds * 4)
+
+    $completed = @(Invoke-PCParallel -InputObject $probes.ToArray() -ScriptBlock $probeBody `
+        -ArgumentList @($TimeoutSeconds) -InitScript $init `
+        -ThrottleLimit 8 -TimeoutSeconds $batchTimeout)
+
+    $byIndex = @{}
+    foreach ($item in $completed) { $byIndex[$item.Index] = $item }
+
+    # Emit in layer order - the whole diagnostic depends on it.
+    $layerOrder = 'Gateway', 'Internet', 'DNS', 'TCP'
+
+    foreach ($layer in $layerOrder) {
+        # A missing gateway is a finding, and it belongs in the Gateway
+        # position rather than tacked on after the TCP rows.
+        if ($layer -eq 'Gateway' -and -not $gateway) {
+            & $emit 'Gateway' '(none)' $false 'No default gateway is configured' $null
+            continue
+        }
+
+        for ($i = 0; $i -lt $probes.Count; $i++) {
+            $probe = $probes[$i]
+            if ($probe.Layer -ne $layer) { continue }
+
+            $label = if ($probe.Kind -eq 'Tcp') { "$($probe.Target):$($probe.Port)" } else { $probe.Target }
+
+            $outcome = $null
+            if ($byIndex.ContainsKey($i)) { $outcome = $byIndex[$i].Output }
+
+            if (-not $outcome) {
+                $reason = if ($byIndex.ContainsKey($i) -and $byIndex[$i].Error) { $byIndex[$i].Error } else { 'no result' }
+                & $emit $layer $label $false "Probe did not complete ($reason)" $null
+                continue
+            }
+
+            & $emit $layer $label $outcome.Success $outcome.Detail $outcome.LatencyMs
+        }
     }
 }

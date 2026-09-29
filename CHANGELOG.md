@@ -7,6 +7,147 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.5.0] - 2026-09-02
+
+One command to install and run, hot paths measured rather than assumed, and
+roughly double the commands.
+
+### Added
+
+#### One command
+
+- `install.ps1`: a bootstrapper pinned to a release tag. Prefers the signed
+  PowerShell Gallery package; falls back to the release archive, which it
+  verifies against the published `SHA256SUMS` and refuses to unpack on a
+  mismatch. There is no switch to skip that check. Installs a `pctools` command
+  into `%LOCALAPPDATA%\Microsoft\WindowsApps`, already on PATH on Windows 10
+  and 11, so no PATH edit and no elevation.
+- `Start-PCTools` (alias `pctools`) opens the window. The shell moved from
+  `src/Shell` into the module, so `Install-Module PCTools` now delivers the GUI
+  as well as the commands - previously the Gallery shipped the module only.
+- `Invoke-PCTools`: a scriptable front door with exit codes (`0` success,
+  `1` warnings, `2` failures, `3010` restart required), `-Json`, and
+  `-Report Html|Json|Text|Csv`. What the `pctools` shim invokes.
+
+#### Storage and startup
+
+- `Get-PCDiskSpace`, with a free-space pressure grade rather than a bare number.
+- `Get-PCDiskUsage`: largest folders and files, over `System.IO` enumeration.
+- `Clear-PCDeliveryOptimization`, `Clear-PCWindowsOld`, `Clear-PCThumbnailCache`,
+  `Clear-PCCrashDump`, `Clear-PCEventLog`.
+- `Optimize-PCVolume`: reads the media type and picks TRIM for an SSD or
+  defragmentation for an HDD. There is no switch to force the wrong one.
+- `Get-PCStartupItem`: Run keys, Startup folders **and** logon scheduled tasks in
+  one list - Task Manager omits the third, which is where most modern updater
+  software lives. `Disable-PCStartupItem` / `Enable-PCStartupItem` write the same
+  `StartupApproved` flag Task Manager writes, so nothing is deleted and either
+  tool can undo the other.
+- `Get-PCService` and `Set-PCServiceStartup`, the latter refusing a fixed list of
+  services whose loss breaks a machine. No `-Force`.
+
+#### Health and security
+
+- `Get-PCSystemInfo`, `Get-PCDiskHealth` (SMART wear, reallocated sectors,
+  temperature), `Get-PCBatteryReport` (capacity loss against design).
+- `Get-PCBootPerformance`: boot time and, from the diagnostics log, the specific
+  applications, services and drivers that lengthen it and by how many
+  milliseconds.
+- `Get-PCEventSummary`: errors and criticals grouped by source and event ID
+  rather than listed, with bugchecks pulled out separately.
+- `Get-PCSecurityStatus`: Defender, firewall, BitLocker, UAC, SmartScreen and
+  pending updates. Read-only by design; there is no counterpart that changes
+  them.
+- `Get-PCHealthReport`: a graded score with the findings behind it, each naming
+  the command that addresses it. The GUI dashboard renders this.
+
+#### Software
+
+- `Get-PCWindowsUpdate` and `Install-PCWindowsUpdate` over the
+  `Microsoft.Update.Session` COM API - no third-party module dependency in a tool
+  that runs elevated. Driver updates are excluded unless named explicitly.
+- `Update-PCApplication`: `winget upgrade` with per-package results.
+- `Get-PCDriverIssue`: problem devices with their Configuration Manager code
+  decoded into what it actually means.
+- `Get-PCAppxPackage` and `Remove-PCAppxPackage`, allowlist-only. The Store,
+  App Installer, Photos, Calculator, Terminal and every framework package are
+  deliberately absent from that list.
+
+#### Automation and reporting
+
+- `Register-PCScheduledMaintenance`, `Get-`, `Unregister-`. Unattended runs are
+  limited to the profiles that cannot demand a restart.
+- `Save-PCHistory` and `Get-PCHistory`, including `-Summary` for the trend across
+  runs. The GUI records every non-preview run.
+- `Register-PCExtension` / `Get-PCExtension`: drop-in `*.PCAction.ps1` actions
+  usable in a profile like any built-in. An extension cannot replace a built-in
+  command.
+- `Get-PCResultSummary`: the one-line "what just happened", shared by the GUI,
+  the CLI and the HTML report so they cannot disagree.
+
+#### Other
+
+- `Test-PCThroughput` and `Test-PCDnsServer` - the speed test and resolver
+  benchmark the roadmap has promised since v0.1.
+- New profiles: `Storage`, `Health` (read-only) and `Weekly`.
+- `Export-PCReport -Format Html`: a single self-contained file with no external
+  stylesheet, font or script, so it renders identically offline.
+- `build/Measure-Performance.ps1`, and `-Task Compile`, `-Task Docs` and
+  `-Task Bench` in the build script.
+- `docs/COMMANDS.md`, generated from the module's own help, and
+  `docs/PERFORMANCE.md`.
+- New test suites: `Parallel`, `Safety`, `Compile`, `Install`.
+
+### Changed
+
+- **The hot paths run concurrently.** `Test-PCConnectivity` ran nine probes in
+  sequence, each waiting out its own timeout; `Test-PCRoute` walked up to twenty
+  TTLs one at a time; `Test-PCMtu` made about eleven sequential probes;
+  `Get-PCNetworkReport -Full` ran six external captures one after another. All
+  now run at once behind a new `Invoke-PCParallel` helper. Output ordering is
+  unchanged - it is the diagnostic value.
+- **`Get-PCNetworkAdapter` makes three CIM queries instead of two per adapter.**
+  A laptop with Wi-Fi, Ethernet, Bluetooth, Hyper-V and VPN adapters was paying
+  twenty-odd round-trips to build one table.
+- **`Clear-PCFolderContent` walks each tree once instead of twice.** It sized
+  with `Get-ChildItem -Recurse` and then deleted with `Remove-Item -Recurse`;
+  it now sizes and deletes in a single `System.IO` pass, with top-level entries
+  cleared concurrently.
+- **A locked file no longer costs its whole directory.** Deleting per file rather
+  than per top-level entry means one held-open browser cache file leaves that
+  file behind, not the directory containing it. `BytesFreed` is now counted after
+  each successful delete, so it reports what was reclaimed rather than what was
+  hoped for.
+- **`Invoke-PCProcess` reads the pipes instead of two temp files.** It created
+  two files with `GetTempFileName`, wrote output to disk and read it back, on
+  every external command. It also now escapes arguments by the rules
+  `CommandLineToArgvW` actually applies on Windows PowerShell 5.1; the previous
+  quoting mangled any argument containing a quote.
+- **The shipped module is compiled to one file.** `-Task Compile` merges the
+  sources so an import parses one file rather than sixty, stamps the version
+  instead of re-reading the manifest, and prepares the log file on first write
+  instead of at import. Measured: about 520 ms to 400 ms. `tests/Compile.Tests.ps1`
+  asserts the compiled and source modules export exactly the same surface.
+- The GUI gained Dashboard, Storage, Health and Software pages, and opens on the
+  dashboard. `Start-PCTools -Page` chooses another.
+- The PSScriptAnalyzer warning budget rose from 146 to 210 for the new code. It
+  is a ceiling to lower, not a target.
+
+### Fixed
+
+- `Get-PCResultSummary` and `Export-PCReport` no longer throw on an empty batch.
+  `Measure-Object` emits nothing for an empty collection, so reading `.Sum` off
+  it is a terminating error under `Set-StrictMode -Version Latest` - which a
+  network-only report reaching the HTML writer would have hit.
+- `Save-PCHistory` no longer overwrites an entry when two runs finish in the same
+  second.
+- `Test-PCMtu` no longer uses `GetNewClosure()`. It rebinds a scriptblock to a
+  scope detached from the module's session state, so the probe could not see the
+  private helper it needed and every call failed.
+
+## [0.4.0] - 2026-01-15
+
 ### Added
 - `PCTools` module (`src/PCTools`): 29 public functions covering cleanup,
   repair, network, preferences and software installation. Every action returns a
@@ -116,6 +257,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Prefetch cleanup, DISM + SFC + CHKDSK, network stack reset, adapter IP/DNS
   configuration, Windows preference toggles, winget app installation.
 
-[Unreleased]: https://github.com/likeBloodMoon/pc-powershelltools/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/likeBloodMoon/pc-powershelltools/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/likeBloodMoon/pc-powershelltools/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/likeBloodMoon/pc-powershelltools/compare/v0.2.0...v0.4.0
 [0.2.0]: https://github.com/likeBloodMoon/pc-powershelltools/releases/tag/v0.2.0
 [0.1.0]: https://github.com/likeBloodMoon/pc-powershelltools/releases/tag/v0.1.0

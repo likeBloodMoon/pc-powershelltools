@@ -12,5 +12,9 @@ function Get-PCLogPath {
     [OutputType([string])]
     param()
 
+    # The log file is prepared on first use rather than at import, so a caller
+    # asking where it is counts as first use.
+    if (-not $script:PCLogReady) { Initialize-PCLog }
+
     $script:PCLogPath
 }

@@ -10,7 +10,7 @@
 
 BeforeAll {
     $script:RepoRoot = Split-Path -Parent $PSScriptRoot
-    $script:ShellPath = Join-Path $script:RepoRoot 'src/Shell/Start-PCToolsShell.ps1'
+    $script:ShellPath = Join-Path $script:RepoRoot 'src/PCTools/Shell/Start-PCToolsShell.ps1'
 
     $script:ShellAst = [System.Management.Automation.Language.Parser]::ParseFile(
         $script:ShellPath, [ref]$null, [ref]$null)
@@ -29,6 +29,20 @@ Describe 'Shell structure' {
 
     It 'requires PowerShell 5.1, the runtime WinForms needs' {
         $script:ShellText | Should -Match '#requires -Version 5\.1'
+    }
+
+    It 'ships inside the module, so a Gallery install carries the GUI' {
+        # The whole point of moving it: Install-Module PCTools then Start-PCTools,
+        # with no separate archive download.
+        $script:ShellPath | Should -Match '[\\/]src[\\/]PCTools[\\/]Shell[\\/]'
+        $script:ExportedCommand | Should -Contain 'Start-PCTools'
+    }
+
+    It 'does not re-import the module it is running inside' {
+        # Start-PCTools invokes this script from within PCTools. An
+        # Import-Module -Force here would tear down and rebuild the module
+        # mid-call.
+        $script:ShellText | Should -Match 'if \(Get-Module -Name PCTools\)'
     }
 
     It 'declares every control key it later reads' {

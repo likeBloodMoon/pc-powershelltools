@@ -53,14 +53,18 @@ jobs:
         shell: powershell
         run: ./build/Invoke-Build.ps1 -Task All
 
-      - name: Stage artifacts and checksums
+      # Compiled first so the signing step below can sign the module that
+      # actually ships, before it is packed into an archive. Signing after
+      # packaging would leave the file inside every zip unsigned - which is the
+      # one file users execute.
+      - name: Compile the module
         shell: powershell
-        run: ./build/Invoke-Build.ps1 -Task Release -Version ${{ steps.version.outputs.version }}
+        run: ./build/Invoke-Build.ps1 -Task Compile
 
       # Signing runs only when a certificate is configured. Without it the
       # release still ships, unsigned, with checksums - which is what the
       # project has today.
-      - name: Sign scripts
+      - name: Sign the module and scripts
         if: ${{ secrets.SIGNING_CERTIFICATE != '' }}
         env:
           SIGNING_CERTIFICATE: ${{ secrets.SIGNING_CERTIFICATE }}
@@ -72,15 +76,23 @@ jobs:
           $password = ConvertTo-SecureString $env:SIGNING_PASSWORD -AsPlainText -Force
           $cert = Get-PfxCertificate -FilePath $pfxPath -Password $password
 
-          Get-ChildItem ./out -Include *.ps1, *.psm1, *.psd1 -Recurse | ForEach-Object {
-              Set-AuthenticodeSignature -FilePath $_.FullName -Certificate $cert `
+          # The compiled module, the GUI shell inside it, the bootstrapper and
+          # the legacy single-file tools - everything a user can execute.
+          $targets = @()
+          $targets += Get-ChildItem ./obj/PCTools -Include *.ps1, *.psm1, *.psd1 -Recurse -File
+          $targets += Get-ChildItem . -Filter *.ps1 -File
+
+          foreach ($target in $targets) {
+              Set-AuthenticodeSignature -FilePath $target.FullName -Certificate $cert `
                   -TimestampServer 'http://timestamp.digicert.com' -HashAlgorithm SHA256
           }
 
           Remove-Item $pfxPath -Force
 
-          # Signing rewrites the files, so the checksums must be regenerated.
-          ./build/Invoke-Build.ps1 -Task Checksum
+      # -SkipCompile so the signatures written above survive into the archives.
+      - name: Stage artifacts and checksums
+        shell: powershell
+        run: ./build/Invoke-Build.ps1 -Task Release -SkipCompile -Version ${{ steps.version.outputs.version }}
 
       # Publishing to the Gallery is opt-in: without an API key the release
       # still ships as an archive. Gallery versions are immutable, so this runs
@@ -91,7 +103,10 @@ jobs:
         env:
           PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
         run: |
-          $module = './src/PCTools'
+          # The compiled, signed module - not the source tree. Publishing the
+          # sources would ship the sixty-file dot-sourcing loader and, when a
+          # certificate is configured, discard the signatures.
+          $module = './obj/PCTools'
 
           # Refuse to republish a version that already exists - the Gallery
           # rejects it anyway, and failing here says why.
@@ -110,15 +125,23 @@ jobs:
             out/*
           generate_release_notes: true
           body: |
-            ## Verifying this release
-
-            Every file below is listed in `SHA256SUMS`. Verify before running:
+            ## Install
 
             ```powershell
-            $file = 'pc-tools.ps1'
-            (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
+            irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/${{ github.ref_name }}/install.ps1 | iex
+            ```
+
+            The installer prefers the signed PowerShell Gallery package and falls
+            back to the archive below, verifying it against `SHA256SUMS` first.
+
+            ## Verifying this release yourself
+
+            Every file below is listed in `SHA256SUMS`:
+
+            ```powershell
+            (Get-FileHash pc-tools-${{ github.ref_name }}.zip -Algorithm SHA256).Hash.ToLower()
             # compare against the matching line in SHA256SUMS
             ```
 
-            Install commands are pinned to this tag in the
-            [README](https://github.com/likeBloodMoon/pc-powershelltools#install).
+            Full instructions are in the
+            [README](https://github.com/likeBloodMoon/pc-powershelltools#install-and-run-in-one-command).

@@ -69,12 +69,37 @@ function Get-PCNetworkReport {
             WlanInterfaces       = @{ File = 'netsh.exe';    Args = @('wlan', 'show', 'interfaces') }
         }
 
+        # Six read-only captures that do not depend on each other. Serially the
+        # user waited for their sum; concurrently, for the slowest of them.
+        Write-PCLog -Level INFO -Message "Capturing $($commands.Count) system views"
+
+        $keys = @($commands.Keys)
+        $descriptors = foreach ($key in $keys) {
+            @{ Key = $key; File = $commands[$key].File; Args = $commands[$key].Args }
+        }
+
+        $captureBody = {
+            param($Descriptor, $Timeout)
+            $run = Invoke-PCProcess -FilePath $Descriptor.File -ArgumentList $Descriptor.Args -TimeoutSeconds $Timeout
+            $run.Output
+        }
+
+        $completed = @(Invoke-PCParallel -InputObject @($descriptors) -ScriptBlock $captureBody `
+            -ArgumentList @($TimeoutSeconds) `
+            -InitScript (Get-PCFunctionSource -Name 'Invoke-PCProcess' -IncludeLogStub) `
+            -ThrottleLimit 6 -TimeoutSeconds ([math]::Max(60, $TimeoutSeconds * 2)))
+
+        $byIndex = @{}
+        foreach ($item in $completed) { $byIndex[$item.Index] = $item }
+
         $extras = [ordered]@{}
-        foreach ($key in $commands.Keys) {
-            $command = $commands[$key]
-            Write-PCLog -Level INFO -Message "Capturing $key"
-            $run = Invoke-PCProcess -FilePath $command.File -ArgumentList $command.Args -TimeoutSeconds $TimeoutSeconds
-            $extras[$key] = $run.Output
+        for ($i = 0; $i -lt $keys.Count; $i++) {
+            $value = '(not captured)'
+            if ($byIndex.ContainsKey($i)) {
+                if ($byIndex[$i].Output) { $value = [string]$byIndex[$i].Output }
+                elseif ($byIndex[$i].Error) { $value = "Capture failed: $($byIndex[$i].Error)" }
+            }
+            $extras[$keys[$i]] = $value
         }
 
         $report.Full = [pscustomobject]$extras

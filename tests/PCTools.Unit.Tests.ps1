@@ -170,8 +170,37 @@ Describe 'Get-PCConnectivityVerdict' {
 
 Describe 'Maintenance profiles' {
 
-    It 'defines the four built-in profiles' {
-        (Get-PCMaintenanceProfile).Name | Should -Be @('Quick', 'Recommended', 'Full', 'NetworkRepair')
+    It 'defines the built-in profiles, in order' {
+        # Order is part of the contract: the GUI's profile list and the README
+        # table both present them least to most invasive.
+        (Get-PCMaintenanceProfile).Name |
+            Should -Be @('Quick', 'Recommended', 'Full', 'Storage', 'Health', 'Weekly', 'NetworkRepair')
+    }
+
+    It 'keeps the irreversible actions out of every built-in profile' {
+        # Removing the previous Windows installation, clearing the event log and
+        # uninstalling apps all give up something that cannot be got back. Each
+        # has to be asked for by name; none may arrive as part of a preset.
+        $irreversible = @('Clear-PCWindowsOld', 'Clear-PCEventLog', 'Remove-PCAppxPackage', 'Set-PCServiceStartup')
+
+        foreach ($profileEntry in (Get-PCMaintenanceProfile)) {
+            foreach ($step in $profileEntry.Actions) {
+                $irreversible | Should -Not -Contain $step.Action `
+                    -Because "profile $($profileEntry.Name) must not include an irreversible action"
+            }
+        }
+    }
+
+    It 'offers a read-only Health profile that changes nothing' {
+        $health = Get-PCMaintenanceProfile -Name 'Health'
+        $health.RestorePoint | Should -BeFalse
+
+        foreach ($step in $health.Actions) {
+            # Every action in Health either only reads, or is explicitly told to
+            # scan rather than repair.
+            $isScanOnly = $step.ContainsKey('Parameters') -and $step.Parameters.ContainsKey('ScanOnly')
+            $isScanOnly | Should -BeTrue -Because "$($step.Action) must be scan-only in the Health profile"
+        }
     }
 
     It 'throws a helpful error for an unknown profile' {

@@ -42,43 +42,66 @@ function Test-PCRoute {
 
     Write-PCLog -Level INFO -Message "Tracing route to $Target"
 
-    $ping = [System.Net.NetworkInformation.Ping]::new()
-    $buffer = [byte[]]::new(32)
+    # Every TTL is an independent probe, so send them all at once and sort the
+    # replies afterwards. Serially this walked up to MaxHops timeouts one after
+    # another - twenty hops at three seconds each is a minute of waiting to be
+    # told the third hop is where it stops. This is what tracert itself does.
+    $hopBody = {
+        param($Ttl, $Destination, $Timeout)
 
-    try {
-        for ($ttl = 1; $ttl -le $MaxHops; $ttl++) {
-            $options = [System.Net.NetworkInformation.PingOptions]::new($ttl, $true)
+        $ping = [System.Net.NetworkInformation.Ping]::new()
+        $buffer = [byte[]]::new(32)
+        $options = [System.Net.NetworkInformation.PingOptions]::new($Ttl, $true)
 
-            $reply = $null
-            $status = 'Unknown'
+        try {
+            $reply = $ping.Send($Destination, $Timeout * 1000, $buffer, $options)
+
             $address = '*'
+            if ($reply.Address) { $address = $reply.Address.ToString() }
+
             $latency = $null
-
-            try {
-                $reply = $ping.Send($Target, $TimeoutSeconds * 1000, $buffer, $options)
-                $status = $reply.Status.ToString()
-
-                if ($reply.Address) { $address = $reply.Address.ToString() }
-                if ($reply.Status -in 'Success', 'TtlExpired') { $latency = $reply.RoundtripTime }
-            }
-            catch {
-                $status = 'Error'
+            if ($reply.Status -eq 'Success' -or $reply.Status -eq 'TtlExpired') {
+                $latency = $reply.RoundtripTime
             }
 
-            [pscustomobject]@{
-                PSTypeName = 'PCTools.RouteHop'
-                Hop        = $ttl
-                Address    = $address
-                LatencyMs  = $latency
-                Status     = $status
-            }
-
-            # Reaching the destination ends the trace; TtlExpired is an
-            # intermediate hop and means keep going.
-            if ($reply -and $reply.Status -eq 'Success') { break }
+            @{ Address = $address; LatencyMs = $latency; Status = $reply.Status.ToString() }
+        }
+        catch {
+            @{ Address = '*'; LatencyMs = $null; Status = 'Error' }
+        }
+        finally {
+            $ping.Dispose()
         }
     }
-    finally {
-        $ping.Dispose()
+
+    $completed = @(Invoke-PCParallel -InputObject (1..$MaxHops) -ScriptBlock $hopBody `
+        -ArgumentList @($Target, $TimeoutSeconds) `
+        -ThrottleLimit ([math]::Min(16, $MaxHops)) `
+        -TimeoutSeconds ([math]::Max(30, $TimeoutSeconds * 4)))
+
+    $byTtl = @{}
+    foreach ($item in $completed) {
+        if ($item.Output) { $byTtl[[int]$item.Input] = $item.Output }
+    }
+
+    for ($ttl = 1; $ttl -le $MaxHops; $ttl++) {
+        $hop = $null
+        if ($byTtl.ContainsKey($ttl)) { $hop = $byTtl[$ttl] }
+
+        if (-not $hop) {
+            $hop = @{ Address = '*'; LatencyMs = $null; Status = 'Unknown' }
+        }
+
+        [pscustomobject]@{
+            PSTypeName = 'PCTools.RouteHop'
+            Hop        = $ttl
+            Address    = $hop.Address
+            LatencyMs  = $hop.LatencyMs
+            Status     = $hop.Status
+        }
+
+        # Reaching the destination ends the trace; every TTL beyond it was
+        # probed too, and reporting those would be noise.
+        if ($hop.Status -eq 'Success') { break }
     }
 }

@@ -89,17 +89,34 @@ function Invoke-PCMaintenance {
         $parameters = if ($step.ContainsKey('Parameters')) { $step.Parameters.Clone() } else { @{} }
 
         $command = Get-Command -Name $name -Module $script:ModuleName -ErrorAction SilentlyContinue
-        if (-not $command) {
-            New-PCActionResult -Action $name -Status Failed -Detail "No such action in $script:ModuleName"
+
+        # An extension action is not an exported command - it is a scriptblock
+        # held in the extension table - so it is looked up separately. Only a
+        # name that was actually registered resolves this way, which keeps an
+        # unregistered name a clear failure rather than something that quietly
+        # picks up a function from the caller's session.
+        $extension = $null
+        if (-not $command -and $script:PCExtension.ContainsKey($name)) {
+            $extension = $script:PCExtension[$name]
+        }
+
+        if (-not $command -and -not $extension) {
+            $detail = if ($script:PCExtension.Count -gt 0) {
+                "'$name' is neither a $script:ModuleName command nor a registered extension. Get-PCExtension lists the extensions."
+            }
+            else {
+                "No such action in $script:ModuleName"
+            }
+            New-PCActionResult -Action $name -Status Failed -Detail $detail
             continue
         }
 
         # Pass -WhatIf and -Confirm through so a preflight really is a preflight.
-        if ($command.Parameters.ContainsKey('WhatIf')) {
+        if ($command -and $command.Parameters.ContainsKey('WhatIf')) {
             $parameters['WhatIf'] = $WhatIfPreference
         }
 
-        $result = & $command @parameters
+        $result = if ($extension) { & $extension.Command @parameters } else { & $command @parameters }
         $result
 
         if ($result.Status -eq 'Failed' -and -not $ContinueOnFailure) {

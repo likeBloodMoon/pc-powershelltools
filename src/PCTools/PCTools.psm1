@@ -9,7 +9,21 @@
 Set-StrictMode -Version Latest
 
 $script:ModuleName = 'PCTools'
-$script:ModuleVersion = (Import-PowerShellDataFile -Path (Join-Path $PSScriptRoot 'PCTools.psd1')).ModuleVersion
+
+# The build stamps the version in when it compiles the shipping module, so a
+# release does not re-read and re-parse its own manifest on every import. From
+# a source checkout there is nothing to stamp, so fall back to the manifest.
+$script:ModuleVersion = '{{MODULE_VERSION}}'
+
+if ($script:ModuleVersion -like '{{*') {
+    # Not stamped, so this is a source checkout rather than a built module.
+    try {
+        $script:ModuleVersion = (Import-PowerShellDataFile -Path (Join-Path $PSScriptRoot 'PCTools.psd1')).ModuleVersion
+    }
+    catch {
+        $script:ModuleVersion = '0.0.0'
+    }
+}
 
 # $IsWindows exists in PowerShell 6+ only. On Windows PowerShell 5.1 the host
 # is Windows by definition. This lets the module import on Linux CI so the
@@ -30,40 +44,26 @@ else {
 }
 
 $script:PCLogDirectory = Join-Path $script:PCDataRoot 'logs'
+$script:PCHistoryDirectory = Join-Path $script:PCDataRoot 'history'
+$script:PCExtensionDirectory = Join-Path $script:PCDataRoot 'extensions'
 $script:PCLogPath = $null
 $script:PCLogSinkTable = @{}
 $script:PCLogSinks = @()
 
+# Set once the log file has been prepared. Preparing it costs a directory
+# probe, a file stat and possibly a rotation, and importing the module is not
+# the moment to spend that - a session that only calls Get-PCPreference never
+# writes a log line at all. Initialize-PCLog does the work on first write.
+$script:PCLogReady = $false
+
 # Maintenance profiles loaded from a user's JSON config, if any.
 $script:PCImportedProfile = @()
 
-try {
-    if (-not (Test-Path -LiteralPath $script:PCLogDirectory)) {
-        New-Item -ItemType Directory -Path $script:PCLogDirectory -Force | Out-Null
-    }
+# Set by Invoke-PCTools so a caller can read the last computed exit code.
+$script:PCLastExitCode = 0
 
-    $script:PCLogPath = Join-Path $script:PCLogDirectory 'pctools.log'
-
-    # Rotate at 2 MB, keeping the five most recent archives, so a machine where
-    # these tools run weekly does not accumulate an unbounded log.
-    if (Test-Path -LiteralPath $script:PCLogPath) {
-        $existing = Get-Item -LiteralPath $script:PCLogPath
-        if ($existing.Length -gt 2MB) {
-            $archive = Join-Path $script:PCLogDirectory ('pctools-{0:yyyyMMdd-HHmmss}.log' -f (Get-Date))
-            Move-Item -LiteralPath $script:PCLogPath -Destination $archive -Force
-
-            Get-ChildItem -LiteralPath $script:PCLogDirectory -Filter 'pctools-*.log' |
-                Sort-Object LastWriteTime -Descending |
-                Select-Object -Skip 5 |
-                Remove-Item -Force -ErrorAction SilentlyContinue
-        }
-    }
-}
-catch {
-    # Logging to a file is a convenience, not a prerequisite for running.
-    $script:PCLogPath = $null
-    Write-Warning "PCTools: file logging disabled ($($_.Exception.Message))."
-}
+# Extension actions loaded from disk by Register-PCExtension, keyed by name.
+$script:PCExtension = @{}
 
 # Dot-source Private first: Public functions depend on those helpers.
 $script:PublicFunctionName = [System.Collections.Generic.List[string]]::new()
@@ -91,4 +91,20 @@ foreach ($folder in 'Private', 'Public') {
     }
 }
 
-Export-ModuleMember -Function $script:PublicFunctionName
+# Aliases declared with [Alias()] on a public function are exported too, so the
+# manifest's AliasesToExport has something to find. Read from the functions
+# actually loaded rather than a hand-kept list, which would drift.
+$script:PublicAliasName = [System.Collections.Generic.List[string]]::new()
+
+foreach ($name in $script:PublicFunctionName) {
+    $command = Get-Command -Name $name -CommandType Function -ErrorAction SilentlyContinue
+    if (-not $command) { continue }
+
+    foreach ($attribute in $command.ScriptBlock.Attributes) {
+        if ($attribute -is [System.Management.Automation.AliasAttribute]) {
+            foreach ($alias in $attribute.AliasNames) { $script:PublicAliasName.Add($alias) }
+        }
+    }
+}
+
+Export-ModuleMember -Function $script:PublicFunctionName -Alias $script:PublicAliasName

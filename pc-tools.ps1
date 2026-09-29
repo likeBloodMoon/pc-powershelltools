@@ -1,18 +1,24 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-    Launches PC Tools.
+    Launches PC Tools from a cloned repository or an extracted release archive.
 
 .DESCRIPTION
-    The entry point for the current toolkit. Finds the PCTools module and the
-    GUI shell next to this script, then starts the shell.
+    A thin launcher, kept so existing links and the release archive layout keep
+    working. It imports the PCTools module sitting next to it and calls
+    Start-PCTools.
 
-    The older single-file scripts (pc-cleanuptool.ps1, pc-netdiag.ps1) are still
-    present and still work, but they are frozen: new work goes into the module
-    and this shell. See MIGRATION.md.
+    If PCTools is installed - Install-Module PCTools, or install.ps1 - you do
+    not need this file at all:
+
+        pctools
+        Start-PCTools
 
 .PARAMETER Theme
     Dark or Light. Defaults to Dark.
+
+.PARAMETER Page
+    The page to open on. Defaults to the dashboard.
 
 .PARAMETER NoGui
     Import the PCTools module into the current session and exit, instead of
@@ -33,6 +39,9 @@ param(
     [ValidateSet('Dark', 'Light')]
     [string]$Theme = 'Dark',
 
+    [ValidateSet('Dashboard', 'Maintenance', 'Storage', 'Health', 'Network', 'Software', 'Preferences', 'Log')]
+    [string]$Page = 'Dashboard',
+
     [switch]$NoGui
 )
 
@@ -45,11 +54,11 @@ if (-not $root) {
     throw @'
 PC Tools cannot locate its own folder.
 
-This usually means the script was piped into iex from the network. The GUI
-needs the PCTools module alongside it, so download the release archive and run
-pc-tools.ps1 from disk instead:
+This usually means the script was piped into iex from the network. Use the
+installer instead - it handles that case, verifies what it downloads, and gives
+you a `pctools` command:
 
-    https://github.com/likeBloodMoon/pc-powershelltools/releases/latest
+    irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.0/install.ps1 | iex
 '@
 }
 
@@ -67,6 +76,7 @@ if ($NoGui) {
     Write-Host '  Get-Command -Module PCTools          list every action'
     Write-Host '  Get-PCMaintenanceProfile             show the built-in profiles'
     Write-Host '  Invoke-PCMaintenance -WhatIf         preview without changing anything'
+    Write-Host '  Get-PCHealthReport                   how is this machine doing'
     Write-Host '  Get-PCNetworkReport | Format-List    diagnose the network'
     Write-Host ''
     if (-not (Test-PCAdmin)) {
@@ -75,9 +85,4 @@ if ($NoGui) {
     return
 }
 
-$shellPath = Join-Path $root 'src\Shell\Start-PCToolsShell.ps1'
-if (-not (Test-Path -LiteralPath $shellPath)) {
-    throw "The PC Tools shell is missing. Expected it at: $shellPath"
-}
-
-& $shellPath -Theme $Theme
+Start-PCTools -Theme $Theme -Page $Page

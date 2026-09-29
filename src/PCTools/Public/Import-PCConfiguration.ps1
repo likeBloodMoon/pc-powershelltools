@@ -66,7 +66,10 @@ function Import-PCConfiguration {
         throw "'$Path' has no 'profiles' array."
     }
 
-    $exported = (Get-Module PCTools).ExportedFunctions.Keys
+    # Extension actions are valid in a profile even though they are not
+    # exported - Invoke-PCMaintenance resolves them through the extension table.
+    # Validating against exports alone would reject a profile that works.
+    $exported = @((Get-Module PCTools).ExportedFunctions.Keys) + @($script:PCExtension.Keys)
     $loaded = [System.Collections.Generic.List[object]]::new()
 
     foreach ($entry in @($config.profiles)) {
@@ -88,7 +91,9 @@ function Import-PCConfiguration {
                 throw "Profile '$($entry.name)' has an action with no 'action' name."
             }
             if ($exported -notcontains $step.action) {
-                throw "Profile '$($entry.name)' references '$($step.action)', which PCTools does not export. Run Get-Command -Module PCTools for the list."
+                throw ("Profile '{0}' references '{1}', which is neither a PCTools command nor a registered extension. " +
+                       "Run Get-Command -Module PCTools for the commands, and Get-PCExtension for the extensions." -f
+                       $entry.name, $step.action)
             }
 
             $parameters = @{}
