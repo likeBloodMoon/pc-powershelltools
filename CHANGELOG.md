@@ -170,6 +170,10 @@ roughly double the commands.
 - The release notes named `pc-tools-v0.5.0.zip`; the build stages the archive
   without the tag's leading `v`, so the documented verification step named a
   file that is not attached.
+- `Import-PCConfiguration`'s error for an unknown action printed literal `{0}`
+  and `{1}` instead of the profile and action names. The format operator binds
+  tighter than string concatenation, so `"a {0} " + "b {1}" -f $x, $y` formats
+  only the second string; the concatenation needs its own parentheses.
 
 ## [0.4.0] - 2026-01-15
 

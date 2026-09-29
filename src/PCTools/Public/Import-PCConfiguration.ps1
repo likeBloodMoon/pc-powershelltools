@@ -91,8 +91,12 @@ function Import-PCConfiguration {
                 throw "Profile '$($entry.name)' has an action with no 'action' name."
             }
             if ($exported -notcontains $step.action) {
-                throw ("Profile '{0}' references '{1}', which is neither a PCTools command nor a registered extension. " +
-                       "Run Get-Command -Module PCTools for the commands, and Get-PCExtension for the extensions." -f
+                # The parentheses around the concatenation are load-bearing: -f
+                # binds tighter than +, so without them the format operator
+                # applies only to the second string and the first keeps its
+                # literal {0} and {1} - which is exactly what this message did.
+                throw (("Profile '{0}' references '{1}', which is neither a PCTools command nor a registered extension. " +
+                        "Run Get-Command -Module PCTools for the commands, and Get-PCExtension for the extensions.") -f
                        $entry.name, $step.action)
             }
 
