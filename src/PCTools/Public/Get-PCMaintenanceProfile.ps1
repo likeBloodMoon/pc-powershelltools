@@ -12,6 +12,9 @@ function Get-PCMaintenanceProfile {
         Note what is and is not in Recommended: Prefetch cleanup and the network
         stack reset are deliberately excluded, because both cost the user
         something and neither belongs in a preset someone runs without reading.
+        The same reasoning keeps Clear-PCWindowsOld, Clear-PCEventLog and
+        Remove-PCAppxPackage out of every profile here - each gives up something
+        that cannot be got back, so each has to be asked for by name.
 
     .PARAMETER Name
         Return only this profile.
@@ -70,6 +73,44 @@ function Get-PCMaintenanceProfile {
                 @{ Action = 'Repair-PCSystemImage' }
                 @{ Action = 'Repair-PCSystemFile' }
                 @{ Action = 'Test-PCDisk' }
+            )
+        }
+        [pscustomobject]@{
+            PSTypeName  = 'PCTools.MaintenanceProfile'
+            Name        = 'Storage'
+            Description = 'The deeper disk reclaims: update and delivery caches, crash dumps, thumbnails. No repairs.'
+            RestorePoint = $false
+            Actions     = @(
+                @{ Action = 'Clear-PCTempFile' }
+                @{ Action = 'Clear-PCRecycleBin' }
+                @{ Action = 'Clear-PCBrowserCache' }
+                @{ Action = 'Clear-PCWindowsUpdateCache' }
+                @{ Action = 'Clear-PCDeliveryOptimization' }
+                @{ Action = 'Clear-PCCrashDump' }
+                @{ Action = 'Clear-PCThumbnailCache' }
+            )
+        }
+        [pscustomobject]@{
+            PSTypeName  = 'PCTools.MaintenanceProfile'
+            Name        = 'Health'
+            Description = 'Read-only. Reports how the machine is doing and changes nothing at all.'
+            RestorePoint = $false
+            Actions     = @(
+                @{ Action = 'Test-PCDisk'; Parameters = @{ ScanOnly = $true } }
+                @{ Action = 'Repair-PCSystemImage'; Parameters = @{ ScanOnly = $true } }
+            )
+        }
+        [pscustomobject]@{
+            PSTypeName  = 'PCTools.MaintenanceProfile'
+            Name        = 'Weekly'
+            Description = 'The sensible default for a schedule: reclaim space, refresh DNS, no restart.'
+            RestorePoint = $false
+            Actions     = @(
+                @{ Action = 'Clear-PCTempFile' }
+                @{ Action = 'Clear-PCRecycleBin' }
+                @{ Action = 'Clear-PCBrowserCache' }
+                @{ Action = 'Clear-PCDeliveryOptimization' }
+                @{ Action = 'Clear-PCDnsCache' }
             )
         }
         [pscustomobject]@{

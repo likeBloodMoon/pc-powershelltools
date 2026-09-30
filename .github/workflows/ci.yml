@@ -44,6 +44,20 @@ jobs:
         shell: powershell
         run: ./build/Invoke-Build.ps1 -Task Analyze
 
+      # The compiled module is what ships, so a merge that fails to produce an
+      # importable module must fail here rather than at release time.
+      - name: Compile the module
+        shell: powershell
+        run: ./build/Invoke-Build.ps1 -Task Compile
+
+      # Published as an artifact rather than gated on: runner timing is noisy
+      # enough that a hard threshold would fail for reasons unrelated to a
+      # change. The numbers are still worth having on every run.
+      - name: Benchmark
+        shell: powershell
+        continue-on-error: true
+        run: ./build/Measure-Performance.ps1 -Iterations 3 -OutputPath ./benchmark.json
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -51,6 +65,37 @@ jobs:
           name: test-results
           path: testResults.xml
           if-no-files-found: ignore
+
+      - name: Upload benchmark
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark
+          path: benchmark.json
+          if-no-files-found: ignore
+
+  docs:
+    name: Command reference is current
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # docs/COMMANDS.md is generated from the module's own help. Regenerating
+      # it here and failing on a diff is what stops it describing a command that
+      # no longer exists, or missing one that was just added.
+      - name: Regenerate and compare
+        shell: powershell
+        run: |
+          ./build/Invoke-Build.ps1 -Task Docs
+          # --ignore-cr-at-eol so a checkout that materialised CRLF does not
+          # read as a stale reference; the task itself writes LF.
+          $diff = git diff --ignore-cr-at-eol --name-only -- docs/COMMANDS.md
+          if ($diff) {
+              git --no-pager diff --ignore-cr-at-eol -- docs/COMMANDS.md
+              throw 'docs/COMMANDS.md is out of date. Run ./build/Invoke-Build.ps1 -Task Docs and commit the result.'
+          }
+          Write-Host 'Command reference is up to date.'
 
   test-pwsh7:
     name: Test on PowerShell 7

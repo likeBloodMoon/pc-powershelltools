@@ -62,7 +62,7 @@ Describe 'Import-PCConfiguration' {
 
     It 'rejects an action the module does not export' {
         $path = New-ConfigFile 'typo.json' '{ "profiles": [ { "name": "Bad", "actions": [ { "action": "Clear-PCTypo" } ] } ] }'
-        { Import-PCConfiguration -Path $path } | Should -Throw -ExpectedMessage '*Clear-PCTypo*does not export*'
+        { Import-PCConfiguration -Path $path } | Should -Throw -ExpectedMessage '*Clear-PCTypo*neither a PCTools command nor a registered extension*'
     }
 
     It 'rejects a profile with no actions' {

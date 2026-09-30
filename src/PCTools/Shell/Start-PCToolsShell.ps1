@@ -13,8 +13,16 @@
     during a DISM run that the original tools would have frozen for half an
     hour.
 
+    It now lives inside the module, so a PowerShell Gallery install carries the
+    GUI as well as the commands. Start it with Start-PCTools rather than by
+    path; running this file directly still works and is what the STA relaunch
+    below does.
+
 .PARAMETER Theme
     Dark or Light. Defaults to Dark.
+
+.PARAMETER Page
+    The page to open on. Defaults to the dashboard.
 
 .EXAMPLE
     powershell -NoProfile -ExecutionPolicy Bypass -File .\Start-PCToolsShell.ps1
@@ -22,7 +30,10 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Dark', 'Light')]
-    [string]$Theme = 'Dark'
+    [string]$Theme = 'Dark',
+
+    [ValidateSet('Dashboard', 'Maintenance', 'Storage', 'Health', 'Network', 'Software', 'Preferences', 'Log')]
+    [string]$Page = 'Dashboard'
 )
 
 Set-StrictMode -Version Latest
@@ -37,7 +48,7 @@ if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
     Write-Warning 'This shell requires an STA host. Relaunching under Windows PowerShell...'
     $relaunch = @(
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA',
-        '-File', "`"$PSCommandPath`"", '-Theme', $Theme
+        '-File', "`"$PSCommandPath`"", '-Theme', $Theme, '-Page', $Page
     )
     Start-Process -FilePath 'powershell.exe' -ArgumentList $relaunch
     return
@@ -103,9 +114,22 @@ catch {
 #region Module import
 
 $script:ShellRoot = $PSScriptRoot
-$modulePath = Join-Path (Split-Path -Parent $script:ShellRoot) 'PCTools\PCTools.psd1'
 
-if (Test-Path -LiteralPath $modulePath) {
+# The shell lives inside the module (src/PCTools/Shell), so the manifest is one
+# level up. Start-PCTools has already imported it; running this file directly
+# has not, which is why both cases are handled.
+$modulePath = Join-Path (Split-Path -Parent $script:ShellRoot) 'PCTools.psd1'
+
+if (Get-Module -Name PCTools) {
+    # Already loaded - do not re-import. -Force would tear down and rebuild the
+    # module while Start-PCTools is executing out of it.
+    # Prefer the manifest: the background runspaces import this path, and a
+    # manifest import gives them the same export surface the UI thread has.
+    $loaded = Get-Module -Name PCTools
+    $loadedManifest = Join-Path $loaded.ModuleBase 'PCTools.psd1'
+    $modulePath = if (Test-Path -LiteralPath $loadedManifest) { $loadedManifest } else { $loaded.Path }
+}
+elseif (Test-Path -LiteralPath $modulePath) {
     Import-Module $modulePath -Force -ErrorAction Stop
 }
 elseif (Get-Module -ListAvailable -Name PCTools) {
@@ -153,6 +177,16 @@ $controls = @{
     NetworkGrid     = $null
     PreferenceGrid  = $null
     LogGrid         = $null
+    HealthScore     = $null
+    HealthSummary   = $null
+    FindingGrid     = $null
+    DiskGrid        = $null
+    StorageGrid     = $null
+    UsageGrid       = $null
+    StartupGrid     = $null
+    SoftwareGrid    = $null
+    DashboardStatus = $null
+    HealthText      = $null
 }
 
 $sync = [hashtable]::Synchronized(@{
@@ -538,7 +572,9 @@ function Show-Summary {
     $succeeded = @($Result | Where-Object Status -eq 'Success').Count
     $failed = @($Result | Where-Object Status -eq 'Failed').Count
     $warned = @($Result | Where-Object Status -eq 'Warning').Count
-    $freed = ($Result | Measure-Object -Property BytesFreed -Sum).Sum
+    $freed = 0L
+    $measured = $Result | Measure-Object -Property BytesFreed -Sum
+    if ($measured -and $null -ne $measured.Sum) { $freed = [long]$measured.Sum }
     $reboot = @($Result | Where-Object RebootRequired).Count -gt 0
 
     $parts = @("$($Result.Count) action(s)", "$succeeded ok")
@@ -742,6 +778,197 @@ function Show-Page {
 
 #endregion
 
+#region Dashboard page
+
+<#
+    The landing page. It answers, without being asked, the three questions
+    somebody opening a maintenance tool actually has: is anything wrong, how
+    much disk is left, and when did this last get looked after.
+
+    Everything here is read-only. Opening the window must never change the
+    machine.
+#>
+
+$dashboardPage = New-Object System.Windows.Forms.TableLayoutPanel
+$dashboardPage.ColumnCount = 1
+$dashboardPage.RowCount = 2
+[void]$dashboardPage.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 190)))
+[void]$dashboardPage.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+
+$dashboardTop = New-Card -Title 'How this machine is doing'
+$dashboardPage.Controls.Add($dashboardTop, 0, 0)
+
+$dashboardInner = New-Object System.Windows.Forms.TableLayoutPanel
+$dashboardInner.Dock = 'Fill'
+$dashboardInner.ColumnCount = 2
+$dashboardInner.RowCount = 1
+[void]$dashboardInner.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Absolute, 150)))
+[void]$dashboardInner.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+$dashboardTop.Controls.Add($dashboardInner)
+$dashboardInner.BringToFront()
+
+$healthScore = New-Object System.Windows.Forms.Label
+$healthScore.Text = '--'
+$healthScore.Dock = 'Fill'
+$healthScore.TextAlign = 'MiddleCenter'
+$healthScore.Font = New-ShellFont 40 ([System.Drawing.FontStyle]::Bold)
+$healthScore.ForeColor = Get-ThemeColor Muted
+$dashboardInner.Controls.Add($healthScore, 0, 0)
+$script:Sync.Controls.HealthScore = $healthScore
+
+$dashboardRight = New-Object System.Windows.Forms.FlowLayoutPanel
+$dashboardRight.Dock = 'Fill'
+$dashboardRight.FlowDirection = 'TopDown'
+$dashboardRight.WrapContents = $false
+$dashboardInner.Controls.Add($dashboardRight, 1, 0)
+
+$healthSummary = New-Object System.Windows.Forms.Label
+$healthSummary.Text = 'Press Check this PC for a read-only health report.'
+$healthSummary.AutoSize = $false
+$healthSummary.Width = 700
+$healthSummary.Height = 46
+$healthSummary.Font = $script:FontBold
+$healthSummary.ForeColor = Get-ThemeColor Text
+$dashboardRight.Controls.Add($healthSummary)
+$script:Sync.Controls.HealthSummary = $healthSummary
+
+$dashboardStatus = New-Object System.Windows.Forms.Label
+$dashboardStatus.Text = ''
+$dashboardStatus.AutoSize = $false
+$dashboardStatus.Width = 700
+$dashboardStatus.Height = 40
+$dashboardStatus.Font = $script:FontBody
+$dashboardStatus.ForeColor = Get-ThemeColor Muted
+$dashboardRight.Controls.Add($dashboardStatus)
+$script:Sync.Controls.DashboardStatus = $dashboardStatus
+
+function Update-HealthReport {
+    <#
+        Renders a PCTools.HealthReport. Called on the UI thread from the task
+        callback, never from the runspace.
+    #>
+    param($Report)
+
+    if (-not $Report) { return }
+
+    $score = $script:Sync.Controls.HealthScore
+    $score.Text = [string]$Report.Score
+    $score.ForeColor = if ($Report.Score -ge 75) { Get-ThemeColor Success }
+                       elseif ($Report.Score -ge 55) { Get-ThemeColor Warning }
+                       else { Get-ThemeColor Danger }
+
+    $script:Sync.Controls.HealthSummary.Text = "$($Report.Grade) - $($Report.Summary)"
+
+    $grid = $script:Sync.Controls.FindingGrid
+    $grid.BeginUpdate()
+    try {
+        $grid.Items.Clear()
+        foreach ($finding in @($Report.Findings)) {
+            $row = New-Object System.Windows.Forms.ListViewItem([string]$finding.Severity)
+            [void]$row.SubItems.Add([string]$finding.Area)
+            [void]$row.SubItems.Add([string]$finding.Message)
+            [void]$row.SubItems.Add([string]$finding.Command)
+            $row.ForeColor = switch ($finding.Severity) {
+                'Critical' { Get-ThemeColor Danger }
+                'Warning'  { Get-ThemeColor Warning }
+                default    { Get-ThemeColor Muted }
+            }
+            [void]$grid.Items.Add($row)
+        }
+
+        if (@($Report.Findings).Count -eq 0) {
+            $row = New-Object System.Windows.Forms.ListViewItem('OK')
+            [void]$row.SubItems.Add('')
+            [void]$row.SubItems.Add('Nothing needs attention.')
+            [void]$row.SubItems.Add('')
+            $row.ForeColor = Get-ThemeColor Success
+            [void]$grid.Items.Add($row)
+        }
+    }
+    finally {
+        $grid.EndUpdate()
+    }
+}
+
+function Start-HealthCheck {
+    Start-ShellTask -Name 'Check this PC' -Script {
+        # Skipped because the dashboard should come back in seconds; the
+        # Storage page runs the full scan when it is asked to.
+        Get-PCHealthReport -SkipDiskUsage
+    } -OnSuccess {
+        param($report)
+        Update-HealthReport -Report $report
+    }
+}
+
+function Update-DashboardStatus {
+    param($Text)
+    $script:Sync.Controls.DashboardStatus.Text = [string]$Text
+}
+
+$dashboardButtons = New-Object System.Windows.Forms.FlowLayoutPanel
+$dashboardButtons.Dock = 'Bottom'
+$dashboardButtons.Height = 44
+$dashboardButtons.WrapContents = $false
+$dashboardTop.Controls.Add($dashboardButtons)
+
+$checkButton = New-Button -Text 'Check this PC' -Width 170 -Accent -OnClick { Start-HealthCheck }
+$dashboardButtons.Controls.Add($checkButton)
+[void]$script:Sync.Controls.RunButtons.Add($checkButton)
+
+$quickCleanButton = New-Button -Text 'Quick clean' -Width 150 -OnClick {
+    Start-Maintenance -ProfileOverride 'Quick'
+}
+$dashboardButtons.Controls.Add($quickCleanButton)
+[void]$script:Sync.Controls.RunButtons.Add($quickCleanButton)
+
+$historyButton = New-Button -Text 'Show history' -Width 150 -OnClick {
+    Start-ShellTask -Name 'Read history' -Script {
+        Get-PCHistory -Summary
+    } -OnSuccess {
+        param($summary)
+        Update-DashboardStatus -Text $summary.Text
+    }
+}
+$dashboardButtons.Controls.Add($historyButton)
+[void]$script:Sync.Controls.RunButtons.Add($historyButton)
+
+$reportButton = New-Button -Text 'Save HTML report' -Width 170 -OnClick {
+    Start-ShellTask -Name 'Write report' -Script {
+        Get-PCHealthReport -SkipDiskUsage | Export-PCReport -Format Html, Json -Confirm:$false
+    } -OnSuccess {
+        param($written)
+        if ($written -and $written.HtmlPath) {
+            Update-DashboardStatus -Text "Report written to $($written.HtmlPath)"
+            Write-ShellLog -Level INFO -Message "Report written to $($written.HtmlPath)"
+        }
+    }
+}
+$dashboardButtons.Controls.Add($reportButton)
+[void]$script:Sync.Controls.RunButtons.Add($reportButton)
+
+$findingCard = New-Card -Title 'What to look at'
+$dashboardPage.Controls.Add($findingCard, 0, 1)
+
+$findingGrid = New-Object System.Windows.Forms.ListView
+$findingGrid.Dock = 'Fill'
+$findingGrid.View = 'Details'
+$findingGrid.FullRowSelect = $true
+$findingGrid.HideSelection = $false
+$findingGrid.Font = $script:FontBody
+$findingGrid.BorderStyle = 'None'
+[void]$findingGrid.Columns.Add('Severity', 90)
+[void]$findingGrid.Columns.Add('Area', 100)
+[void]$findingGrid.Columns.Add('Finding', 620)
+[void]$findingGrid.Columns.Add('Command', 220)
+$findingCard.Controls.Add($findingGrid)
+$findingGrid.BringToFront()
+$script:Sync.Controls.FindingGrid = $findingGrid
+
+Register-Page -Name 'Dashboard' -Subtitle 'How this machine is doing, at a glance' -Panel $dashboardPage
+
+#endregion
+
 #region Maintenance page
 
 $maintenancePage = New-Object System.Windows.Forms.TableLayoutPanel
@@ -817,9 +1044,15 @@ function Start-Maintenance {
         the point of building the module on ShouldProcess rather than writing a
         separate "what would happen" description that can drift.
     #>
-    param([switch]$Preview)
+    param(
+        [switch]$Preview,
 
-    $profileName = Get-SelectedProfileName
+        # Lets another page run a named profile without first reaching into the
+        # Maintenance page's radio buttons to change what is selected there.
+        [string]$ProfileOverride
+    )
+
+    $profileName = if ($ProfileOverride) { $ProfileOverride } else { Get-SelectedProfileName }
     $skipRestore = $skipRestoreBox.Checked
     $grid = $script:Sync.Controls.MaintenanceGrid
     $grid.Items.Clear()
@@ -841,7 +1074,18 @@ function Start-Maintenance {
         }
         if ($Preview) { $parameters['WhatIf'] = $true }
 
-        Invoke-PCMaintenance @parameters
+        $results = Invoke-PCMaintenance @parameters
+
+        # Recorded here, on the runspace, rather than from a callback: the task
+        # guard is still set while OnSuccess/OnFinally run, so a nested
+        # Start-ShellTask would be turned away as busy.
+        # Previews are not recorded - they changed nothing, and counting them
+        # would skew every trend the history exists to show.
+        if (-not $Preview) {
+            $results | Save-PCHistory -ProfileName $ProfileName -Confirm:$false | Out-Null
+        }
+
+        $results
     } -OnSuccess {
         param($results)
 
@@ -914,6 +1158,454 @@ $maintenanceGrid.BringToFront()
 $script:Sync.Controls.MaintenanceGrid = $maintenanceGrid
 
 Register-Page -Name 'Maintenance' -Subtitle 'Clean up, repair and verify Windows' -Panel $maintenancePage
+
+#endregion
+
+#region Storage page
+
+<#
+    Where the space went, and what can be got back. The two are separate
+    questions: the reclaims at the top are safe and repeatable, the usage scan
+    below finds the 40 GB of forgotten virtual machine images that no cleanup
+    action will ever touch.
+#>
+
+$storagePage = New-Object System.Windows.Forms.TableLayoutPanel
+$storagePage.ColumnCount = 1
+$storagePage.RowCount = 3
+[void]$storagePage.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 150)))
+[void]$storagePage.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 190)))
+[void]$storagePage.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+
+$diskCard = New-Card -Title 'Drives'
+$storagePage.Controls.Add($diskCard, 0, 0)
+
+$diskGrid = New-Object System.Windows.Forms.ListView
+$diskGrid.Dock = 'Fill'
+$diskGrid.View = 'Details'
+$diskGrid.FullRowSelect = $true
+$diskGrid.Font = $script:FontBody
+$diskGrid.BorderStyle = 'None'
+[void]$diskGrid.Columns.Add('Drive', 70)
+[void]$diskGrid.Columns.Add('Label', 160)
+[void]$diskGrid.Columns.Add('Free', 100)
+[void]$diskGrid.Columns.Add('Size', 100)
+[void]$diskGrid.Columns.Add('Free %', 80)
+[void]$diskGrid.Columns.Add('Pressure', 120)
+$diskCard.Controls.Add($diskGrid)
+$diskGrid.BringToFront()
+$script:Sync.Controls.DiskGrid = $diskGrid
+
+function Update-DiskGrid {
+    param([AllowEmptyCollection()][object[]]$Disk)
+
+    $grid = $script:Sync.Controls.DiskGrid
+    $grid.BeginUpdate()
+    try {
+        $grid.Items.Clear()
+        foreach ($item in $Disk) {
+            $row = New-Object System.Windows.Forms.ListViewItem([string]$item.Drive)
+            [void]$row.SubItems.Add([string]$item.Label)
+            [void]$row.SubItems.Add([string]$item.FreeDisplay)
+            [void]$row.SubItems.Add([string]$item.SizeDisplay)
+            [void]$row.SubItems.Add($(if ($null -ne $item.PercentFree) { "$($item.PercentFree)%" } else { '?' }))
+            [void]$row.SubItems.Add([string]$item.Pressure)
+            $row.ForeColor = switch ($item.Pressure) {
+                'Critical' { Get-ThemeColor Danger }
+                'Low'      { Get-ThemeColor Warning }
+                'Tight'    { Get-ThemeColor Warning }
+                default    { Get-ThemeColor Text }
+            }
+            [void]$grid.Items.Add($row)
+        }
+    }
+    finally {
+        $grid.EndUpdate()
+    }
+}
+
+$storageActionCard = New-Card -Title 'Reclaim space'
+$storagePage.Controls.Add($storageActionCard, 0, 1)
+
+$storageActions = New-Object System.Windows.Forms.FlowLayoutPanel
+$storageActions.Dock = 'Fill'
+$storageActions.AutoScroll = $true
+$storageActionCard.Controls.Add($storageActions)
+$storageActions.BringToFront()
+
+function Start-StorageAction {
+    <#
+        One wrapper for the storage buttons, so each of them is three lines
+        rather than a copy of the task plumbing.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Label,
+        [Parameter(Mandatory)][scriptblock]$Script,
+        [hashtable]$Arguments = @{}
+    )
+
+    Start-ShellTask -Name $Label -Arguments $Arguments -Script $Script -OnSuccess {
+        param($results)
+        $items = @($results | Where-Object { $_ })
+        foreach ($result in $items) {
+            Add-ResultRow -Grid $script:Sync.Controls.StorageGrid -Result $result
+        }
+        Show-Summary -Result $items
+    }
+}
+
+$storageActions.Controls.Add((New-Button -Text 'Refresh drives' -Width 160 -Accent -OnClick {
+    Start-ShellTask -Name 'Read drives' -Script { Get-PCDiskSpace } -OnSuccess {
+        param($disks)
+        Update-DiskGrid -Disk @($disks)
+    }
+}))
+
+$storageActions.Controls.Add((New-Button -Text 'Storage clean-up' -Width 170 -OnClick {
+    Start-StorageAction -Label 'Storage profile' -Script {
+        Invoke-PCMaintenance -ProfileName 'Storage' -Confirm:$false
+    }
+}))
+
+$storageActions.Controls.Add((New-Button -Text 'Delivery Optimization' -Width 190 -OnClick {
+    Start-StorageAction -Label 'Clear Delivery Optimization' -Script {
+        Clear-PCDeliveryOptimization -Confirm:$false
+    }
+}))
+
+$storageActions.Controls.Add((New-Button -Text 'Crash dumps' -Width 150 -OnClick {
+    Start-StorageAction -Label 'Clear crash dumps' -Script { Clear-PCCrashDump -Confirm:$false }
+}))
+
+$storageActions.Controls.Add((New-Button -Text 'Thumbnail cache' -Width 170 -OnClick {
+    Start-StorageAction -Label 'Clear thumbnail cache' -Script { Clear-PCThumbnailCache -Confirm:$false }
+}))
+
+$storageActions.Controls.Add((New-Button -Text 'Previous Windows' -Width 180 -OnClick {
+    # The one irreversible reclaim on this page, so it asks first and says
+    # exactly what is given up.
+    $answer = [System.Windows.Forms.MessageBox]::Show(
+        ("Delete the previous Windows installation (C:\Windows.old)?`r`n`r`n" +
+         "This usually reclaims 15-30 GB, and it permanently removes the ability to " +
+         "roll back to the previous Windows build.`r`n`r`n" +
+         "It is refused if the folder is still inside the 10-day rollback window."),
+        'PC Tools', 'YesNo', 'Warning')
+
+    if ($answer -eq 'Yes') {
+        Start-StorageAction -Label 'Remove Windows.old' -Script { Clear-PCWindowsOld -Confirm:$false }
+    }
+}))
+
+$storageActions.Controls.Add((New-Button -Text 'Find large folders' -Width 180 -OnClick {
+    Start-ShellTask -Name 'Scan disk usage' -Script {
+        Get-PCDiskUsage -Top 25
+    } -OnSuccess {
+        param($usage)
+        Update-UsageGrid -Usage $usage
+    }
+}))
+
+$storageBottom = New-Object System.Windows.Forms.TableLayoutPanel
+$storageBottom.Dock = 'Fill'
+$storageBottom.ColumnCount = 2
+$storageBottom.RowCount = 1
+[void]$storageBottom.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 50)))
+[void]$storageBottom.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 50)))
+$storagePage.Controls.Add($storageBottom, 0, 2)
+
+$usageCard = New-Card -Title 'Largest folders and files'
+$storageBottom.Controls.Add($usageCard, 0, 0)
+
+$usageGrid = New-Object System.Windows.Forms.ListView
+$usageGrid.Dock = 'Fill'
+$usageGrid.View = 'Details'
+$usageGrid.FullRowSelect = $true
+$usageGrid.Font = $script:FontBody
+$usageGrid.BorderStyle = 'None'
+[void]$usageGrid.Columns.Add('Size', 90)
+[void]$usageGrid.Columns.Add('Path', 460)
+$usageCard.Controls.Add($usageGrid)
+$usageGrid.BringToFront()
+$script:Sync.Controls.UsageGrid = $usageGrid
+
+function Update-UsageGrid {
+    param($Usage)
+
+    $grid = $script:Sync.Controls.UsageGrid
+    $grid.BeginUpdate()
+    try {
+        $grid.Items.Clear()
+        if (-not $Usage) { return }
+
+        foreach ($entry in @($Usage.LargestFolders)) {
+            $row = New-Object System.Windows.Forms.ListViewItem([string]$entry.SizeDisplay)
+            [void]$row.SubItems.Add([string]$entry.Path)
+            $row.ForeColor = Get-ThemeColor Text
+            [void]$grid.Items.Add($row)
+        }
+        foreach ($entry in @($Usage.LargestFiles)) {
+            $row = New-Object System.Windows.Forms.ListViewItem([string]$entry.SizeDisplay)
+            [void]$row.SubItems.Add([string]$entry.Path)
+            $row.ForeColor = Get-ThemeColor Muted
+            [void]$grid.Items.Add($row)
+        }
+    }
+    finally {
+        $grid.EndUpdate()
+    }
+}
+
+$storageResultCard = New-Card -Title 'Results'
+$storageBottom.Controls.Add($storageResultCard, 1, 0)
+
+$storageGrid = New-ResultGrid
+$storageResultCard.Controls.Add($storageGrid)
+$storageGrid.BringToFront()
+$script:Sync.Controls.StorageGrid = $storageGrid
+
+Register-Page -Name 'Storage' -Subtitle 'Where the space went, and what can be reclaimed' -Panel $storagePage
+
+#endregion
+
+#region Health page
+
+<#
+    Read-only throughout. Everything here reports; nothing on this page changes
+    the machine, which is what makes it safe to open on somebody else's PC.
+#>
+
+$healthPage = New-Object System.Windows.Forms.TableLayoutPanel
+$healthPage.ColumnCount = 1
+$healthPage.RowCount = 2
+[void]$healthPage.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 130)))
+[void]$healthPage.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+
+$healthActionCard = New-Card -Title 'Reports'
+$healthPage.Controls.Add($healthActionCard, 0, 0)
+
+$healthActions = New-Object System.Windows.Forms.FlowLayoutPanel
+$healthActions.Dock = 'Fill'
+$healthActions.AutoScroll = $true
+$healthActionCard.Controls.Add($healthActions)
+$healthActions.BringToFront()
+
+function Show-HealthText {
+    <#
+        The health reports are all differently shaped, so rather than a grid per
+        report they render into one text pane. Read-only output; nothing here is
+        an action result.
+    #>
+    param([string]$Text)
+
+    $script:Sync.Controls.HealthText.Text = $Text
+}
+
+$healthActions.Controls.Add((New-Button -Text 'System info' -Width 150 -Accent -OnClick {
+    Start-ShellTask -Name 'System info' -Script { Get-PCSystemInfo | Format-List | Out-String -Width 160 } -OnSuccess {
+        param($text)
+        Show-HealthText -Text ([string]$text)
+    }
+}))
+
+$healthActions.Controls.Add((New-Button -Text 'Disk health' -Width 150 -OnClick {
+    Start-ShellTask -Name 'Disk health' -Script {
+        $disks = @(Get-PCDiskHealth)
+        if ($disks.Count -eq 0) { 'No physical disk reported reliability data. This is normal for USB enclosures and some consumer drives.' }
+        else { $disks | Format-List FriendlyName, MediaType, SizeDisplay, Health, Wear, PowerOnHours, Temperature, Concerns | Out-String -Width 160 }
+    } -OnSuccess {
+        param($text)
+        Show-HealthText -Text ([string]$text)
+    }
+}))
+
+$healthActions.Controls.Add((New-Button -Text 'Security posture' -Width 170 -OnClick {
+    Start-ShellTask -Name 'Security status' -Script {
+        $status = Get-PCSecurityStatus
+        $lines = @("Grade: $($status.Grade)", '')
+        if (@($status.Findings).Count -eq 0) { $lines += 'No findings.' }
+        else { foreach ($finding in $status.Findings) { $lines += "  - $finding" } }
+        $lines += ''
+        $lines += ($status | Format-List Defender, Firewall, BitLocker, UacEnabled, SmartScreen, RebootPending | Out-String -Width 160)
+        $lines -join [Environment]::NewLine
+    } -OnSuccess {
+        param($text)
+        Show-HealthText -Text ([string]$text)
+    }
+}))
+
+$healthActions.Controls.Add((New-Button -Text 'Recent errors' -Width 150 -OnClick {
+    Start-ShellTask -Name 'Event summary' -Script {
+        $summary = Get-PCEventSummary -Days 7
+        $lines = @($summary.Verdict, '')
+        $lines += ($summary.Groups | Format-Table Provider, EventId, Count, LastSeen, Message -AutoSize | Out-String -Width 200)
+        $lines -join [Environment]::NewLine
+    } -OnSuccess {
+        param($text)
+        Show-HealthText -Text ([string]$text)
+    }
+}))
+
+$healthActions.Controls.Add((New-Button -Text 'Boot time' -Width 140 -OnClick {
+    Start-ShellTask -Name 'Boot performance' -Script {
+        $boot = Get-PCBootPerformance
+        $lines = @($boot.Verdict, '')
+        if (@($boot.Degradations).Count -gt 0) {
+            $lines += ($boot.Degradations | Format-Table Name, Type, PenaltyMs -AutoSize | Out-String -Width 160)
+        }
+        $lines -join [Environment]::NewLine
+    } -OnSuccess {
+        param($text)
+        Show-HealthText -Text ([string]$text)
+    }
+}))
+
+$healthActions.Controls.Add((New-Button -Text 'Startup programs' -Width 170 -OnClick {
+    Start-ShellTask -Name 'Startup items' -Script {
+        Get-PCStartupItem | Format-Table Name, Source, Scope, Enabled, Command -AutoSize | Out-String -Width 220
+    } -OnSuccess {
+        param($text)
+        Show-HealthText -Text ([string]$text)
+    }
+}))
+
+$healthActions.Controls.Add((New-Button -Text 'Battery' -Width 130 -OnClick {
+    Start-ShellTask -Name 'Battery report' -Script {
+        $cells = @(Get-PCBatteryReport)
+        if ($cells.Count -eq 0) { 'No battery detected - this looks like a desktop.' }
+        else { $cells | Format-List Name, Manufacturer, HealthPercent, ChargeRemaining, Verdict | Out-String -Width 160 }
+    } -OnSuccess {
+        param($text)
+        Show-HealthText -Text ([string]$text)
+    }
+}))
+
+$healthTextCard = New-Card -Title 'Report'
+$healthPage.Controls.Add($healthTextCard, 0, 1)
+
+$healthText = New-Object System.Windows.Forms.TextBox
+$healthText.Dock = 'Fill'
+$healthText.Multiline = $true
+$healthText.ReadOnly = $true
+$healthText.ScrollBars = 'Both'
+$healthText.WordWrap = $false
+$healthText.Font = $script:FontMono
+$healthText.BorderStyle = 'None'
+$healthText.Text = 'Pick a report above. Everything on this page only reads; nothing here changes the machine.'
+$healthTextCard.Controls.Add($healthText)
+$healthText.BringToFront()
+$script:Sync.Controls.HealthText = $healthText
+
+Register-Page -Name 'Health' -Subtitle 'Read-only reports: hardware, security, stability' -Panel $healthPage
+
+#endregion
+
+#region Software page
+
+$softwarePage = New-Object System.Windows.Forms.TableLayoutPanel
+$softwarePage.ColumnCount = 1
+$softwarePage.RowCount = 2
+[void]$softwarePage.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 150)))
+[void]$softwarePage.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+
+$softwareActionCard = New-Card -Title 'Updates and applications'
+$softwarePage.Controls.Add($softwareActionCard, 0, 0)
+
+$softwareActions = New-Object System.Windows.Forms.FlowLayoutPanel
+$softwareActions.Dock = 'Fill'
+$softwareActions.AutoScroll = $true
+$softwareActionCard.Controls.Add($softwareActions)
+$softwareActions.BringToFront()
+
+function Start-SoftwareAction {
+    param(
+        [Parameter(Mandatory)][string]$Label,
+        [Parameter(Mandatory)][scriptblock]$Script
+    )
+
+    Start-ShellTask -Name $Label -Script $Script -OnSuccess {
+        param($results)
+        $items = @($results | Where-Object { $_ })
+        foreach ($result in $items) {
+            Add-ResultRow -Grid $script:Sync.Controls.SoftwareGrid -Result $result
+        }
+        Show-Summary -Result $items
+    }
+}
+
+$softwareActions.Controls.Add((New-Button -Text 'Check for updates' -Width 180 -Accent -OnClick {
+    Start-ShellTask -Name 'Check Windows Update' -Script {
+        $updates = @(Get-PCWindowsUpdate)
+        if ($updates.Count -eq 0) {
+            @{ Text = 'Windows is up to date.' }
+        }
+        else {
+            @{ Text = ($updates | Format-Table Title, KB, SizeDisplay, RebootRequired -AutoSize | Out-String -Width 200) }
+        }
+    } -OnSuccess {
+        param($outcome)
+        Write-ShellLog -Level INFO -Message ([string]$outcome.Text)
+        Show-Page -Name 'Log'
+    }
+}))
+
+$softwareActions.Controls.Add((New-Button -Text 'Install updates' -Width 160 -OnClick {
+    $answer = [System.Windows.Forms.MessageBox]::Show(
+        ("Download and install all pending Windows updates?`r`n`r`n" +
+         "This can take a long time and may require a restart afterwards. " +
+         "Nothing is restarted for you."),
+        'PC Tools', 'YesNo', 'Warning')
+
+    if ($answer -eq 'Yes') {
+        Start-SoftwareAction -Label 'Install Windows updates' -Script {
+            Install-PCWindowsUpdate -Confirm:$false
+        }
+    }
+}))
+
+$softwareActions.Controls.Add((New-Button -Text 'Out-of-date apps' -Width 170 -OnClick {
+    Start-SoftwareAction -Label 'List app updates' -Script { Update-PCApplication -ListOnly -Confirm:$false }
+}))
+
+$softwareActions.Controls.Add((New-Button -Text 'Update all apps' -Width 170 -OnClick {
+    Start-SoftwareAction -Label 'Upgrade applications' -Script { Update-PCApplication -Confirm:$false }
+}))
+
+$softwareActions.Controls.Add((New-Button -Text 'Device problems' -Width 170 -OnClick {
+    Start-ShellTask -Name 'Driver issues' -Script {
+        $issues = @(Get-PCDriverIssue)
+        if ($issues.Count -eq 0) { 'Windows reports no device problems.' }
+        else { $issues | Format-Table Name, ProblemCode, Problem -AutoSize | Out-String -Width 200 }
+    } -OnSuccess {
+        param($text)
+        Write-ShellLog -Level INFO -Message ([string]$text)
+        Show-Page -Name 'Log'
+    }
+}))
+
+$softwareActions.Controls.Add((New-Button -Text 'Schedule maintenance' -Width 190 -OnClick {
+    $answer = [System.Windows.Forms.MessageBox]::Show(
+        ("Run the Weekly profile automatically, every Sunday at 03:00?`r`n`r`n" +
+         "It reclaims disk space and refreshes DNS. It performs no repairs and " +
+         "never restarts the machine. Remove it later with " +
+         "Unregister-PCScheduledMaintenance."),
+        'PC Tools', 'YesNo', 'Question')
+
+    if ($answer -eq 'Yes') {
+        Start-SoftwareAction -Label 'Schedule weekly maintenance' -Script {
+            Register-PCScheduledMaintenance -ProfileName 'Weekly' -Frequency Weekly -Confirm:$false
+        }
+    }
+}))
+
+$softwareResultCard = New-Card -Title 'Results'
+$softwarePage.Controls.Add($softwareResultCard, 0, 1)
+
+$softwareGrid = New-ResultGrid
+$softwareResultCard.Controls.Add($softwareGrid)
+$softwareGrid.BringToFront()
+$script:Sync.Controls.SoftwareGrid = $softwareGrid
+
+Register-Page -Name 'Software' -Subtitle 'Windows updates, applications and drivers' -Panel $softwarePage
 
 #endregion
 
@@ -1618,7 +2310,7 @@ $taskTimer.Add_Tick({
 $form.Add_Shown({
     Update-ThemeColors
     Update-ElevationState
-    Show-Page -Name 'Maintenance'
+    Show-Page -Name $Page
 
     $logTimer.Start()
     $taskTimer.Start()
@@ -1630,10 +2322,35 @@ $form.Add_Shown({
         Write-ShellLog -Level WARN -Message 'Running without elevation. Repair and network actions will fail until you restart as administrator.'
     }
 
-    # Populate the adapter list without blocking the window's first paint.
-    Start-ShellTask -Name 'Read adapters' -Script { Get-PCNetworkAdapter } -OnSuccess {
-        param($adapters)
-        Update-AdapterGrid -Adapter @($adapters)
+    # Fill the dashboard without blocking the window's first paint. One task,
+    # not three: Start-ShellTask serialises on the busy flag, so queuing several
+    # here would mean all but the first were turned away.
+    Start-ShellTask -Name 'Read this PC' -Script {
+        [pscustomobject]@{
+            Adapters = @(Get-PCNetworkAdapter)
+            Disks    = @(Get-PCDiskSpace)
+            History  = Get-PCHistory -Summary
+            Schedule = @(Get-PCScheduledMaintenance)
+        }
+    } -OnSuccess {
+        param($state)
+
+        Update-AdapterGrid -Adapter @($state.Adapters)
+        Update-DiskGrid -Disk @($state.Disks)
+
+        $parts = @()
+        if ($state.History) { $parts += $state.History.Text }
+
+        $scheduled = @($state.Schedule)
+        if ($scheduled.Count -gt 0) {
+            $next = $scheduled[0]
+            $parts += "Scheduled: $($next.ProfileName) - next run $($next.NextRunTime), last result $($next.LastResult)."
+        }
+        else {
+            $parts += 'No maintenance is scheduled. The Software page can set one up.'
+        }
+
+        Update-DashboardStatus -Text ($parts -join '  ')
     }
 })
 

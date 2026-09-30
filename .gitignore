@@ -21,3 +21,7 @@ desktop.ini
 *.psproj
 testResults*.xml
 obj/
+
+# Benchmark output. Machine- and load-specific, so a committed baseline would
+# mislead rather than help; CI publishes each run as an artifact instead.
+build/benchmark.json

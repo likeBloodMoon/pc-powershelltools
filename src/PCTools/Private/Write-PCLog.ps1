@@ -27,6 +27,8 @@ function Write-PCLog {
         [string]$Level = 'INFO'
     )
 
+    if (-not $script:PCLogReady) { Initialize-PCLog }
+
     $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     $line = '[{0}] [{1}] {2}' -f $timestamp, $Level, $Message
 

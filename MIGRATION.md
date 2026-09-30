@@ -83,6 +83,35 @@ Names: `DarkMode`, `DisableBingSearch`, `ShowHiddenFiles`, `ShowFileExtensions`,
 - **Subnet masks are converted, not passed through.** `255.0.255.0` is rejected
   as invalid rather than handed to `netsh`.
 
+
+## New in v0.5
+
+The commands above all still work exactly as documented. v0.5 added areas the
+single-file tools never covered at all:
+
+| Question | Command |
+|---|---|
+| How is this machine doing? | `Get-PCHealthReport` |
+| Where did my disk space go? | `Get-PCDiskSpace`, `Get-PCDiskUsage` |
+| What starts with Windows? | `Get-PCStartupItem`, `Disable-PCStartupItem` |
+| Is this disk failing? | `Get-PCDiskHealth` |
+| Why is boot so slow? | `Get-PCBootPerformance` |
+| What keeps crashing? | `Get-PCEventSummary` |
+| Is this machine protected? | `Get-PCSecurityStatus` |
+| What needs updating? | `Get-PCWindowsUpdate`, `Update-PCApplication` |
+| Can this run on a schedule? | `Register-PCScheduledMaintenance` |
+| How much have I reclaimed over time? | `Get-PCHistory -Summary` |
+
+And the entry points changed shape:
+
+| Was | Now |
+|---|---|
+| `.\pc-tools.ps1` | `Start-PCTools`, or `pctools` |
+| `.\pc-tools.ps1 -NoGui` | `Import-Module PCTools` |
+| (nothing) | `Invoke-PCTools -ProfileName Quick -Exit`, for scripts and scheduled tasks |
+
+`.\pc-tools.ps1` still works from a clone or an extracted release archive.
+
 ## Running the old tools
 
 Nothing was removed:

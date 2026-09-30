@@ -9,6 +9,13 @@ function Get-PCNetworkAdapter {
         adapters without addresses, and Net Diag listed addresses in a second
         table the user had to correlate by hand.
 
+        Three CIM queries, not two per adapter. The first version called
+        Get-NetIPConfiguration and Get-NetIPInterface inside the loop, so a
+        laptop carrying Wi-Fi, Ethernet, Bluetooth, a Hyper-V switch and a VPN
+        adapter paid twenty-odd round-trips to WMI to build one table. Asking
+        for everything once and joining on ifIndex in memory gives the same
+        objects for a fixed three.
+
     .PARAMETER ConnectedOnly
         Return only adapters whose status is Up.
 
@@ -37,20 +44,37 @@ function Get-PCNetworkAdapter {
         $adapters = @($adapters | Where-Object { $_.Status -eq 'Up' })
     }
 
+    if ($adapters.Count -eq 0) { return }
+
+    # Ask once, index by interface, join in memory.
+    $configByIndex = @{}
+    try {
+        foreach ($item in @(Get-NetIPConfiguration -All -ErrorAction Stop)) {
+            $configByIndex[[int]$item.InterfaceIndex] = $item
+        }
+    }
+    catch {
+        Write-PCLog -Level DEBUG -Message "Get-NetIPConfiguration failed: $($_.Exception.Message)"
+    }
+
+    $dhcpByIndex = @{}
+    try {
+        foreach ($item in @(Get-NetIPInterface -AddressFamily IPv4 -ErrorAction Stop)) {
+            $dhcpByIndex[[int]$item.InterfaceIndex] = ($item.Dhcp -eq 'Enabled')
+        }
+    }
+    catch {
+        Write-PCLog -Level DEBUG -Message "Get-NetIPInterface failed: $($_.Exception.Message)"
+    }
+
     foreach ($adapter in $adapters) {
+        $index = [int]$adapter.ifIndex
+
         $config = $null
-        try {
-            $config = Get-NetIPConfiguration -InterfaceIndex $adapter.ifIndex -ErrorAction Stop
-        }
-        catch {
-            Write-PCLog -Level DEBUG -Message "No IP configuration for $($adapter.Name): $($_.Exception.Message)"
-        }
+        if ($configByIndex.ContainsKey($index)) { $config = $configByIndex[$index] }
 
         $isDhcp = $null
-        try {
-            $isDhcp = (Get-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction Stop).Dhcp -eq 'Enabled'
-        }
-        catch { }
+        if ($dhcpByIndex.ContainsKey($index)) { $isDhcp = $dhcpByIndex[$index] }
 
         [pscustomobject]@{
             PSTypeName           = 'PCTools.NetworkAdapter'
