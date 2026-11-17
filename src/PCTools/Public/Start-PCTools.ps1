@@ -7,12 +7,14 @@ function Start-PCTools {
         The GUI ships inside the module, so this works straight after the
         one-command install with nothing else downloaded:
 
-            irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.1/install.ps1 | iex
+            irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.2/install.ps1 | iex
             Start-PCTools
 
-        WinForms needs a single-threaded apartment. The shell relaunches itself
-        under one when the host does not provide it, which is what makes this
-        callable from pwsh.exe as well as powershell.exe.
+        The window runs in its own Windows PowerShell process, started in this
+        console: the command returns when the window closes, and any startup
+        error is printed here. That also gives WinForms the single-threaded
+        apartment it needs, which is what makes this callable from pwsh.exe as
+        well as powershell.exe.
 
     .PARAMETER Theme
         Dark or Light. Defaults to Dark.
@@ -88,8 +90,29 @@ function Start-PCTools {
         return
     }
 
-    # Run in a child scope. The shell defines several dozen UI helpers and holds
-    # the form for the lifetime of the window; dot-sourcing it would leave all
-    # of that behind in the module scope after the window closed.
-    & $shellPath -Theme $Theme -Page $Page
+    # Run the shell in its own powershell.exe, never in this process.
+    #
+    # Invoked from here with `& $shellPath`, the shell ran inside this module's
+    # session state. Every module command it then called resolved `$script:`
+    # to the shell's own script scope instead of the module's, so module state
+    # such as $script:PCImportedProfile was invisible and strict mode stopped
+    # the window opening. A separate process imports the module normally - the
+    # same way the -Elevate path above has always worked - and also starts with
+    # clean WinForms state, so a session that has already shown a window cannot
+    # break it either.
+    #
+    # Called as a console command rather than through Start-Process, so it runs
+    # in this console: it blocks until the window closes, as before, and any
+    # startup error is printed here instead of vanishing with a hidden window.
+    $arguments = @(
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA',
+        '-File', $shellPath,
+        '-Theme', $Theme, '-Page', $Page
+    )
+
+    & powershell.exe @arguments
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "The PC Tools window exited with code $LASTEXITCODE. Any error is shown above."
+    }
 }

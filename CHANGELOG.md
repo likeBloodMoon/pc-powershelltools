@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.5.2] - 2026-11-17
+
+### Fixed
+
+- The window failed to open with "The variable '$script:PCImportedProfile'
+  cannot be retrieved because it has not been set". `Start-PCTools` ran the
+  shell script with `&` from inside the module, so the shell executed in the
+  module's session state, and every module command it called resolved
+  `$script:` to the shell's scope rather than the module's. `Start-PCTools` now
+  starts the shell in its own `powershell.exe` with `-File` - the way the
+  `-Elevate` path always has - in the same console, so it still blocks until
+  the window closes and startup errors still print there. A fresh process also
+  means WinForms state left by an earlier window cannot break it. A shell test
+  checks the shell is never invoked in-process again.
+- After an update in a console that had the old version loaded, the installer
+  printed both versions ("PC Tools 0.5.0 0.5.1 is installed"). It now unloads
+  the old one first.
+
 ## [0.5.1] - 2026-11-17
 
 ### Changed
@@ -331,7 +349,8 @@ itself is unchanged; this is what fixed the shipping:
   Prefetch cleanup, DISM + SFC + CHKDSK, network stack reset, adapter IP/DNS
   configuration, Windows preference toggles, winget app installation.
 
-[Unreleased]: https://github.com/likeBloodMoon/pc-powershelltools/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/likeBloodMoon/pc-powershelltools/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/likeBloodMoon/pc-powershelltools/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/likeBloodMoon/pc-powershelltools/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/likeBloodMoon/pc-powershelltools/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/likeBloodMoon/pc-powershelltools/compare/v0.2.0...v0.4.0

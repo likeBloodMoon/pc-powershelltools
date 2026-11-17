@@ -1,6 +1,6 @@
 @{
     RootModule        = 'PCTools.psm1'
-    ModuleVersion     = '0.5.1'
+    ModuleVersion     = '0.5.2'
     GUID              = '6f3c0a58-1d2e-4a7b-9c34-8e5f2b7d41a9'
     Author            = 'likeBloodMoon'
     CompanyName       = 'likeBloodMoon'
@@ -126,6 +126,13 @@
             LicenseUri   = 'https://github.com/likeBloodMoon/pc-powershelltools/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/likeBloodMoon/pc-powershelltools'
             ReleaseNotes = @'
+0.5.2 - the window opens.
+
+- Start-PCTools runs the window in its own powershell.exe. Run inside the
+  module, the window could not see module state and stopped at startup with
+  "The variable '$script:PCImportedProfile' cannot be retrieved".
+- The installer no longer reports two versions after an update.
+
 0.5.1 - fixes from the first real-machine install.
 
 - The window now opens when Start-PCTools runs in a session that has already
