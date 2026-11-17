@@ -55,7 +55,7 @@ function Start-PCTools {
     # module is compiled into a single PCTools.psm1 at the module root, where
     # '..\Shell' points at a sibling of the module folder that does not exist.
     # That version of this line meant Start-PCTools threw "shell is missing" on
-    # every install - which is to say, on every install.
+    # every install.
     $moduleBase = $ExecutionContext.SessionState.Module.ModuleBase
     if (-not $moduleBase) { $moduleBase = Split-Path -Parent $PSScriptRoot }
 
