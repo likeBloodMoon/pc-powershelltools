@@ -8,8 +8,7 @@
     working. It imports the PCTools module sitting next to it and calls
     Start-PCTools.
 
-    If PCTools is installed - Install-Module PCTools, or install.ps1 - you do
-    not need this file at all:
+    If PCTools is installed with install.ps1 you do not need this file at all:
 
         pctools
         Start-PCTools

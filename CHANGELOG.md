@@ -11,14 +11,24 @@ Nothing yet.
 
 ## [0.5.1] - 2026-11-17
 
+### Changed
+
+- The installer installs from the GitHub release only: it downloads the archive
+  and `SHA256SUMS`, verifies the hash, and installs. The PowerShell Gallery path
+  is removed, along with the release workflow's Gallery publishing step - the
+  module is not on the Gallery, and the installer's first message was a
+  misleading "the PowerShell Gallery is not reachable". Re-running the install
+  command is how to update.
+
 ### Fixed
 
 - The GUI failed to open with "SetCompatibleTextRenderingDefault must be called
   before the first IWin32Window object is created" whenever the PowerShell
   session had already created a WinForms window - straight after `install.ps1`
   on a real machine, and on any second `Start-PCTools` in the same console. The
-  call is now skipped when it is too late to make, which changes nothing about
-  how the window renders. A shell test checks it stays guarded.
+  call, and `SetUnhandledExceptionMode` after it, which has the same rule, are
+  now skipped when it is too late to make them; the process is already running
+  with those defaults. A shell test checks both stay guarded.
 - `SHA256SUMS` was written with a UTF-8 byte-order mark by Windows PowerShell
   5.1, which `sha256sum -c` rejects on the first line. It is now plain UTF-8
   with LF line endings.

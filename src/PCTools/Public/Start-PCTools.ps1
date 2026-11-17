@@ -4,10 +4,10 @@ function Start-PCTools {
         Opens the PC Tools window.
 
     .DESCRIPTION
-        The GUI ships inside the module, so this works from a PowerShell Gallery
-        install with nothing else downloaded:
+        The GUI ships inside the module, so this works straight after the
+        one-command install with nothing else downloaded:
 
-            Install-Module PCTools -Scope CurrentUser
+            irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.1/install.ps1 | iex
             Start-PCTools
 
         WinForms needs a single-threaded apartment. The shell relaunches itself
@@ -55,7 +55,7 @@ function Start-PCTools {
     # module is compiled into a single PCTools.psm1 at the module root, where
     # '..\Shell' points at a sibling of the module folder that does not exist.
     # That version of this line meant Start-PCTools threw "shell is missing" on
-    # every Gallery and archive install - which is to say, on every install.
+    # every install - which is to say, on every install.
     $moduleBase = $ExecutionContext.SessionState.Module.ModuleBase
     if (-not $moduleBase) { $moduleBase = Split-Path -Parent $PSScriptRoot }
 

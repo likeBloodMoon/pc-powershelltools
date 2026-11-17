@@ -24,31 +24,21 @@ recently.
 
 What the installer actually does:
 
-1. Installs `PCTools` from the PowerShell Gallery. The package is not yet
-   Authenticode-signed - that is the v0.6 milestone - so for now you are
-   trusting the Gallery's own transport and account security.
-2. If the Gallery is unreachable, downloads the release archive **and** its
-   `SHA256SUMS`, verifies the hash, and refuses to continue on a mismatch. There
-   is no switch to skip that check.
+1. Downloads the release archive from GitHub **and** its `SHA256SUMS`, verifies
+   the hash, and refuses to continue on a mismatch. There is no switch to skip
+   that check.
+2. Installs the module into your PowerShell modules folder.
 3. Drops a `pctools` command into `%LOCALAPPDATA%\Microsoft\WindowsApps`, which
    is already on `PATH` on Windows 10 and 11 - so no PATH edit and no elevation.
 4. Opens the window.
 
-**The honest limitation:** the bootstrapper itself is a script fetched over TLS
-from a pinned URL, which you are trusting on the strength of that connection,
-and until releases are signed the Gallery package is too. The archive fallback
-is hash-verified. If you would rather verify everything yourself, use the manual
-path below.
+To update, run the same command again: it installs the newest release over the
+old one.
 
-### Without the bootstrapper
-
-```powershell
-Install-Module PCTools -Scope CurrentUser
-Start-PCTools
-```
-
-The Gallery package now carries the GUI as well as the commands, so this is a
-complete install. `Update-Module PCTools` keeps it current.
+**The honest limitation:** the installer itself is a script fetched over TLS
+from a pinned URL, which you are trusting on the strength of that connection.
+Everything it downloads after that is hash-verified. If you would rather verify
+the first step too, use the manual path below.
 
 ### Verifying everything yourself
 
