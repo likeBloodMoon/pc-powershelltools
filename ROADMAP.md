@@ -26,7 +26,7 @@ Installation is one command, pinned to a tag and verified.
 ### What v0.5 changed
 
 **One command.** The shell moved inside the module, so a Gallery install carries
-the GUI; `install.ps1` prefers the signed Gallery package, falls back to a
+the GUI; `install.ps1` prefers the Gallery package, falls back to a
 hash-verified release archive, and installs a `pctools` command onto a PATH
 directory that already exists.
 

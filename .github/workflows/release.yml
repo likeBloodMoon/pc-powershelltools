@@ -17,8 +17,31 @@ jobs:
     name: Build and publish
     runs-on: windows-latest
 
+    # The secrets context is not allowed in a step's `if:` - a workflow that
+    # tries is rejected before any job starts, which is why every run of this
+    # file failed with no jobs until v0.5.0. Test for them here instead, once,
+    # and let the steps read the answer from env.
+    env:
+      HAS_SIGNING_CERTIFICATE: ${{ secrets.SIGNING_CERTIFICATE != '' }}
+      HAS_PSGALLERY_KEY: ${{ secrets.PSGALLERY_API_KEY != '' }}
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
     steps:
       - uses: actions/checkout@v4
+
+      # v0.5 was first tagged `v0,5`. The `v*` filter matched it, nothing else
+      # did, and the release that came out had no assets. Fail here, by name,
+      # rather than three steps later on a version mismatch.
+      - name: Check the tag is vMAJOR.MINOR.PATCH
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: powershell
+        run: |
+          $tag = '${{ github.ref_name }}'
+          if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
+              throw "Tag '$tag' is not of the form vMAJOR.MINOR.PATCH (e.g. v0.5.0). Delete it and tag again."
+          }
 
       - name: Resolve version
         id: version
@@ -65,7 +88,7 @@ jobs:
       # release still ships, unsigned, with checksums - which is what the
       # project has today.
       - name: Sign the module and scripts
-        if: ${{ secrets.SIGNING_CERTIFICATE != '' }}
+        if: env.HAS_SIGNING_CERTIFICATE == 'true'
         env:
           SIGNING_CERTIFICATE: ${{ secrets.SIGNING_CERTIFICATE }}
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
@@ -98,7 +121,7 @@ jobs:
       # still ships as an archive. Gallery versions are immutable, so this runs
       # after the suite has passed and only for a tagged build.
       - name: Publish to the PowerShell Gallery
-        if: ${{ secrets.PSGALLERY_API_KEY != '' && startsWith(github.ref, 'refs/tags/v') }}
+        if: env.HAS_PSGALLERY_KEY == 'true' && startsWith(github.ref, 'refs/tags/v')
         shell: powershell
         env:
           PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
@@ -131,8 +154,8 @@ jobs:
             irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/${{ github.ref_name }}/install.ps1 | iex
             ```
 
-            The installer prefers the signed PowerShell Gallery package and falls
-            back to the archive below, verifying it against `SHA256SUMS` first.
+            The installer prefers the PowerShell Gallery package and falls back
+            to the archive below, verifying it against `SHA256SUMS` first.
 
             ## Verifying this release yourself
 
@@ -145,3 +168,65 @@ jobs:
 
             Full instructions are in the
             [README](https://github.com/likeBloodMoon/pc-powershelltools#install-and-run-in-one-command).
+
+  # Everything above can pass and the install still be broken - that is how
+  # v0.5 went out. This job installs the release exactly as the README tells a
+  # user to, on a runner that has never seen the repository, and fails the
+  # workflow if that does not produce a working module.
+  smoke-test:
+    name: Install it the way the README says
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+      TAG: ${{ github.ref_name }}
+
+    steps:
+      # The README's "verifying everything yourself" path: the archive and
+      # SHA256SUMS must both exist on the release and agree.
+      - name: Verify the release archive against SHA256SUMS
+        shell: powershell
+        run: |
+          [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+          $base = "https://github.com/${{ github.repository }}/releases/download/$env:TAG"
+          Invoke-WebRequest "$base/pc-tools-$env:VERSION.zip" -OutFile pc-tools.zip -UseBasicParsing
+          Invoke-WebRequest "$base/SHA256SUMS" -OutFile SHA256SUMS -UseBasicParsing
+
+          $actual   = (Get-FileHash pc-tools.zip -Algorithm SHA256).Hash.ToLower()
+          $expected = (Select-String -Path SHA256SUMS -Pattern 'pc-tools-.*\.zip').Line.Split(' ')[0]
+          if ($actual -ne $expected) { throw "Checksum mismatch: archive $actual, SHA256SUMS $expected" }
+          Write-Host "pc-tools-$env:VERSION.zip matches SHA256SUMS."
+
+      # The one-command install, from the tag's own install.ps1. Whichever
+      # source it uses - the Gallery, or the archive if the Gallery has not
+      # indexed the new version yet - the result has to import.
+      - name: Run the README install command
+        shell: powershell
+        run: |
+          [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+          $url = "https://raw.githubusercontent.com/${{ github.repository }}/$env:TAG/install.ps1"
+          & ([scriptblock]::Create((Invoke-RestMethod $url))) -NoLaunch
+
+      - name: Check the installed module
+        shell: powershell
+        run: |
+          Import-Module PCTools -RequiredVersion $env:VERSION -ErrorAction Stop
+          $module = Get-Module PCTools
+
+          $exported = @($module.ExportedFunctions.Keys)
+          if ($exported.Count -lt 1) { throw 'PCTools imported but exports no commands.' }
+          foreach ($name in 'Start-PCTools', 'Invoke-PCTools', 'Invoke-PCMaintenance') {
+              if ($exported -notcontains $name) { throw "$name is missing from the installed module." }
+          }
+
+          # A read-only command end to end, so a module that imports but
+          # cannot run anything still fails here.
+          $info = Get-PCSystemInfo
+          if (-not $info) { throw 'Get-PCSystemInfo returned nothing.' }
+
+          $shim = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\pctools.cmd'
+          if (-not (Test-Path $shim)) { Write-Warning "The pctools shim was not found at $shim." }
+
+          Write-Host "PCTools $($module.Version) installed and working: $($exported.Count) commands."

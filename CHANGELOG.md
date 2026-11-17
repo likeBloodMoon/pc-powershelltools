@@ -14,11 +14,27 @@ Nothing yet.
 One command to install and run, hot paths measured rather than assumed, and
 roughly double the commands.
 
+### Release process
+
+v0.5 was first tagged `v0,5`, and the release workflow had never been able to
+run - GitHub rejects a workflow that reads `secrets` in a step's `if:`, before
+any job starts. So the first v0.5 release had no archive, no `SHA256SUMS` and
+no Gallery package, and the README's install command returned 404. The module
+itself is unchanged; this is what fixed the shipping:
+
+- The release workflow checks for its secrets at job level, so it parses.
+- It refuses a tag that is not `vMAJOR.MINOR.PATCH`.
+- A smoke-test job installs each release from the README command on a clean
+  runner and checks the result imports and runs.
+- CI runs actionlint over the workflow files.
+- The README and installer no longer describe the Gallery package as signed. It
+  is not yet; that is v0.6.
+
 ### Added
 
 #### One command
 
-- `install.ps1`: a bootstrapper pinned to a release tag. Prefers the signed
+- `install.ps1`: a bootstrapper pinned to a release tag. Prefers the
   PowerShell Gallery package; falls back to the release archive, which it
   verifies against the published `SHA256SUMS` and refuses to unpack on a
   mismatch. There is no switch to skip that check. Installs a `pctools` command

@@ -24,8 +24,9 @@ recently.
 
 What the installer actually does:
 
-1. Installs `PCTools` from the PowerShell Gallery, where the package is signed
-   and PowerShellGet verifies it.
+1. Installs `PCTools` from the PowerShell Gallery. The package is not yet
+   Authenticode-signed - that is the v0.6 milestone - so for now you are
+   trusting the Gallery's own transport and account security.
 2. If the Gallery is unreachable, downloads the release archive **and** its
    `SHA256SUMS`, verifies the hash, and refuses to continue on a mismatch. There
    is no switch to skip that check.
@@ -33,10 +34,11 @@ What the installer actually does:
    is already on `PATH` on Windows 10 and 11 - so no PATH edit and no elevation.
 4. Opens the window.
 
-**The honest limitation:** step 1 runs a script fetched over TLS from a pinned
-URL, which you are trusting on the strength of that connection. Everything after
-it is signature- or hash-verified. If you would rather verify the first step too,
-use the manual path below.
+**The honest limitation:** the bootstrapper itself is a script fetched over TLS
+from a pinned URL, which you are trusting on the strength of that connection,
+and until releases are signed the Gallery package is too. The archive fallback
+is hash-verified. If you would rather verify everything yourself, use the manual
+path below.
 
 ### Without the bootstrapper
 
