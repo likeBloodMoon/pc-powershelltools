@@ -13,7 +13,7 @@ underneath.
 ## Install and run, in one command
 
 ```powershell
-irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.0/install.ps1 | iex
+irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.1/install.ps1 | iex
 ```
 
 That installs PC Tools, adds a `pctools` command, and opens the window.
@@ -53,7 +53,7 @@ complete install. `Update-Module PCTools` keeps it current.
 ### Verifying everything yourself
 
 ```powershell
-$version = 'v0.5.0'
+$version = 'v0.5.1'
 $base    = "https://github.com/likeBloodMoon/pc-powershelltools/releases/download/$version"
 Invoke-WebRequest "$base/pc-tools-$($version.TrimStart('v')).zip" -OutFile pc-tools.zip
 Invoke-WebRequest "$base/SHA256SUMS" -OutFile SHA256SUMS
@@ -402,8 +402,8 @@ do not break, but `main` is whatever was pushed to it most recently. If you use
 them, pin to a tag:
 
 ```powershell
-irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.0/pc-cleanuptool.ps1 | iex
-irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.0/pc-netdiag.ps1 | iex
+irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.1/pc-cleanuptool.ps1 | iex
+irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.1/pc-netdiag.ps1 | iex
 ```
 
 The installer at the top of this file is the recommended path: it is pinned,

@@ -220,7 +220,12 @@ function Invoke-ChecksumTask {
     $sums = Get-ChildItem -Path $outDir -File | Sort-Object Name | ForEach-Object {
         '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
     }
-    $sums | Set-Content -Path $sumsPath -Encoding UTF8
+    # No BOM and LF endings: Set-Content -Encoding UTF8 on Windows PowerShell
+    # 5.1 writes a byte-order mark, which glued itself to the first hash in the
+    # v0.5.0 SHA256SUMS and made `sha256sum -c` reject that line. $RepoRoot is
+    # absolute, so the .NET call does not depend on the current directory.
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($sumsPath, (($sums -join "`n") + "`n"), $utf8NoBom)
 
     Write-Host ''
     $sums | ForEach-Object { Write-Host "  $_" }
