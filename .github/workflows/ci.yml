@@ -113,3 +113,18 @@ jobs:
       - name: Syntax and unit tests (PowerShell 7)
         shell: pwsh
         run: ./build/Invoke-Build.ps1 -Task Test
+
+  # A workflow GitHub cannot parse fails with no jobs and no log - the release
+  # workflow sat like that, unnoticed, from v0.3 to v0.5. actionlint catches it
+  # on the pull request instead.
+  workflows:
+    name: Workflow files are valid
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: actionlint
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
+          ./actionlint -color

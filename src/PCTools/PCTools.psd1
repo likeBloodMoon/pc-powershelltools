@@ -4,7 +4,7 @@
     GUID              = '6f3c0a58-1d2e-4a7b-9c34-8e5f2b7d41a9'
     Author            = 'likeBloodMoon'
     CompanyName       = 'likeBloodMoon'
-    Copyright         = '(c) 2025 likeBloodMoon. Released under the MIT License.'
+    Copyright         = '(c) 2025-2026 likeBloodMoon. Released under the MIT License.'
 
     Description       = 'Windows maintenance, repair, storage analysis, health reporting and network diagnostics - as commands and as a GUI, in one module. Every action supports -WhatIf and returns a structured result. Run Start-PCTools for the window, or Invoke-PCTools for a scriptable run with an exit code.'
 

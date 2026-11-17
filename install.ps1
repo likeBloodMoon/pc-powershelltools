@@ -16,8 +16,8 @@
 
       1. Checks that this is Windows on PowerShell 5.1 or later.
       2. Installs PCTools from the PowerShell Gallery, which is the good path -
-         the package is signed, PowerShellGet verifies it, and Update-Module
-         works afterwards.
+         Update-Module works afterwards. (The package is not Authenticode-
+         signed yet; that is the v0.6 milestone.)
       3. If the Gallery is unreachable or PowerShellGet is missing, downloads
          the release archive from GitHub AND its SHA256SUMS, verifies the hash,
          and refuses to go any further if it does not match. That verification
@@ -28,10 +28,11 @@
       5. Opens the window.
 
     The honest limitation: step 1 runs code fetched over TLS from a pinned URL,
-    which you are trusting on the strength of that TLS connection. Everything
-    after it is signature- or hash-verified. If you would rather verify the
-    first step too, the README documents the fully manual path - download,
-    check the hash yourself, then run.
+    which you are trusting on the strength of that TLS connection, and until
+    releases are signed so is the Gallery package. The archive fallback is
+    hash-verified. If you would rather verify everything yourself, the README
+    documents the fully manual path - download, check the hash yourself, then
+    run.
 
 .PARAMETER Version
     The release to install, e.g. '0.5.0'. Defaults to the newest published.

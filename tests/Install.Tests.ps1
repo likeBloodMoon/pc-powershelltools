@@ -53,7 +53,7 @@ Describe 'install.ps1' {
         }
     }
 
-    It 'prefers the PowerShell Gallery, where packages are signed' {
+    It 'prefers the PowerShell Gallery' {
         $script:InstallText | Should -Match 'Install-Module'
         $script:InstallText | Should -Match 'Find-Module'
     }
