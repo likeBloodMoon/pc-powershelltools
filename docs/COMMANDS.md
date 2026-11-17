@@ -3,7 +3,7 @@
 Generated from the module's own help by `./build/Invoke-Build.ps1 -Task Docs`.
 Do not edit by hand - edit the comment-based help on the command instead.
 
-PCTools 0.5.0 exports 74 commands.
+PCTools 0.5.1 exports 74 commands.
 
 ## Automation
 

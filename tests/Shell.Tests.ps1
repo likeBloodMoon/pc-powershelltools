@@ -31,6 +31,26 @@ Describe 'Shell structure' {
         $script:ShellText | Should -Match '#requires -Version 5\.1'
     }
 
+    It 'opens a second time in the same session' {
+        # SetCompatibleTextRenderingDefault throws once the process has created
+        # any window, so an unguarded call stopped the window opening at the end
+        # of the installer and on every Start-PCTools after the first.
+        $calls = $script:ShellAst.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+                $node.Member.Value -eq 'SetCompatibleTextRenderingDefault'
+            }, $true)
+
+        $calls.Count | Should -BeGreaterThan 0
+        foreach ($call in $calls) {
+            $guarded = $false
+            for ($parent = $call.Parent; $parent; $parent = $parent.Parent) {
+                if ($parent -is [System.Management.Automation.Language.TryStatementAst]) { $guarded = $true; break }
+            }
+            $guarded | Should -BeTrue -Because 'it throws when a window already exists in the process'
+        }
+    }
+
     It 'ships inside the module, so a Gallery install carries the GUI' {
         # The whole point of moving it: Install-Module PCTools then Start-PCTools,
         # with no separate archive download.

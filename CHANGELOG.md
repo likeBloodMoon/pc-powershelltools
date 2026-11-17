@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.5.1] - 2026-11-17
+
+### Fixed
+
+- The GUI failed to open with "SetCompatibleTextRenderingDefault must be called
+  before the first IWin32Window object is created" whenever the PowerShell
+  session had already created a WinForms window - straight after `install.ps1`
+  on a real machine, and on any second `Start-PCTools` in the same console. The
+  call is now skipped when it is too late to make, which changes nothing about
+  how the window renders. A shell test checks it stays guarded.
+- `SHA256SUMS` was written with a UTF-8 byte-order mark by Windows PowerShell
+  5.1, which `sha256sum -c` rejects on the first line. It is now plain UTF-8
+  with LF line endings.
+
 ## [0.5.0] - 2026-09-02
 
 One command to install and run, hot paths measured rather than assumed, and
@@ -307,7 +321,8 @@ itself is unchanged; this is what fixed the shipping:
   Prefetch cleanup, DISM + SFC + CHKDSK, network stack reset, adapter IP/DNS
   configuration, Windows preference toggles, winget app installation.
 
-[Unreleased]: https://github.com/likeBloodMoon/pc-powershelltools/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/likeBloodMoon/pc-powershelltools/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/likeBloodMoon/pc-powershelltools/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/likeBloodMoon/pc-powershelltools/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/likeBloodMoon/pc-powershelltools/compare/v0.2.0...v0.4.0
 [0.2.0]: https://github.com/likeBloodMoon/pc-powershelltools/releases/tag/v0.2.0

@@ -6,7 +6,7 @@
 .DESCRIPTION
     The one-command install:
 
-        irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.0/install.ps1 | iex
+        irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.1/install.ps1 | iex
 
     Note the tag in that URL. It is not 'main' on purpose: pinning to a tag
     means the code you run is a specific reviewed release rather than whatever
@@ -50,10 +50,10 @@
     Reinstall even when the requested version is already present.
 
 .EXAMPLE
-    irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.0/install.ps1 | iex
+    irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.1/install.ps1 | iex
 
 .EXAMPLE
-    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.0/install.ps1))) -NoLaunch
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.1/install.ps1))) -NoLaunch
 
     Passing arguments through a piped-to-iex script needs this form; `iex`
     itself has nowhere to put them.

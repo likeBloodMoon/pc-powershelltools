@@ -102,7 +102,16 @@ catch {
 }
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
-[System.Windows.Forms.Application]::SetCompatibleTextRenderingDefault($false)
+
+# This may only be called before the process has created any WinForms window.
+# A console session that has already shown one - an earlier Start-PCTools, one
+# of the legacy tools, an InputBox - makes it throw, and the window never opens.
+# It only sets a default, and $false is what a process that got that far is
+# already using, so skipping it there loses nothing.
+try {
+    [System.Windows.Forms.Application]::SetCompatibleTextRenderingDefault($false)
+}
+catch [System.InvalidOperationException] { }
 
 # Surface UI-thread exceptions instead of closing the window silently, which is
 # what the original Cleanup Tool did on any unhandled error.

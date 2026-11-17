@@ -58,7 +58,7 @@ This usually means the script was piped into iex from the network. Use the
 installer instead - it handles that case, verifies what it downloads, and gives
 you a `pctools` command:
 
-    irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.0/install.ps1 | iex
+    irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.1/install.ps1 | iex
 '@
 }
 

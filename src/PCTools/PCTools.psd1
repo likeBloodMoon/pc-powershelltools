@@ -1,6 +1,6 @@
 @{
     RootModule        = 'PCTools.psm1'
-    ModuleVersion     = '0.5.0'
+    ModuleVersion     = '0.5.1'
     GUID              = '6f3c0a58-1d2e-4a7b-9c34-8e5f2b7d41a9'
     Author            = 'likeBloodMoon'
     CompanyName       = 'likeBloodMoon'
@@ -126,6 +126,12 @@
             LicenseUri   = 'https://github.com/likeBloodMoon/pc-powershelltools/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/likeBloodMoon/pc-powershelltools'
             ReleaseNotes = @'
+0.5.1 - fixes from the first real-machine install.
+
+- The window now opens when Start-PCTools runs in a session that has already
+  shown a WinForms window, including straight after the installer.
+- SHA256SUMS is written without a byte-order mark, so sha256sum -c accepts it.
+
 0.5.0 - one command, faster, and a great deal more of it.
 
 - The GUI now ships inside the module: Install-Module PCTools; Start-PCTools.
