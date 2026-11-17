@@ -56,6 +56,27 @@ Describe 'Shell structure' {
         }
     }
 
+    It 'starts the window in its own process, outside the module session state' {
+        # `& $shellPath` from Start-PCTools ran the shell inside the module's
+        # session state, where module commands it called resolved $script: to
+        # the shell's scope and could not see module state. The window failed
+        # to open on the first real install because of it.
+        $startPath = Join-Path $script:RepoRoot 'src/PCTools/Public/Start-PCTools.ps1'
+        $startAst = [System.Management.Automation.Language.Parser]::ParseFile($startPath, [ref]$null, [ref]$null)
+
+        $invokesShellInProcess = $startAst.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.CommandAst] -and
+                $node.InvocationOperator -ne 'Unknown' -and
+                $node.CommandElements[0] -is [System.Management.Automation.Language.VariableExpressionAst] -and
+                $node.CommandElements[0].VariablePath.UserPath -eq 'shellPath'
+            }, $true)
+        @($invokesShellInProcess).Count | Should -Be 0 -Because 'the shell must not run inside the module session state'
+
+        $startAst.Extent.Text | Should -Match '&\s+powershell\.exe\s+@arguments'
+        $startAst.Extent.Text | Should -Match '''-File'',\s*\$shellPath'
+    }
+
     It 'ships inside the module, so installing the module carries the GUI' {
         # The whole point of moving it: install the module, then Start-PCTools,
         # with no separate archive download.

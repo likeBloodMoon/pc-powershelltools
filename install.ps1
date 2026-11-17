@@ -6,7 +6,7 @@
 .DESCRIPTION
     The one-command install:
 
-        irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.1/install.ps1 | iex
+        irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.2/install.ps1 | iex
 
     Note the tag in that URL. It is not 'main' on purpose: pinning to a tag
     means the code you run is a specific reviewed release rather than whatever
@@ -51,10 +51,10 @@
     requested release over whatever is there, so it changes nothing.
 
 .EXAMPLE
-    irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.1/install.ps1 | iex
+    irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.2/install.ps1 | iex
 
 .EXAMPLE
-    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.1/install.ps1))) -NoLaunch
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.2/install.ps1))) -NoLaunch
 
     Passing arguments through a piped-to-iex script needs this form; `iex`
     itself has nowhere to put them.
@@ -253,8 +253,12 @@ if (-not $installed) {
     throw 'PC Tools could not be installed from the GitHub release.'
 }
 
-Import-Module $script:ModuleName -Force -ErrorAction Stop
-$module = Get-Module $script:ModuleName
+# Unload any copy this console already has. Otherwise an update leaves the old
+# and new versions loaded side by side, and the summary below printed both.
+Remove-Module $script:ModuleName -Force -ErrorAction SilentlyContinue
+$module = Import-Module $script:ModuleName -Force -PassThru -ErrorAction Stop |
+    Sort-Object Version -Descending |
+    Select-Object -First 1
 
 if (-not $CliOnly) {
     Install-Shim
