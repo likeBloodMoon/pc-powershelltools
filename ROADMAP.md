@@ -25,10 +25,9 @@ Installation is one command, pinned to a tag and verified.
 
 ### What v0.5 changed
 
-**One command.** The shell moved inside the module, so a Gallery install carries
-the GUI; `install.ps1` prefers the Gallery package, falls back to a
-hash-verified release archive, and installs a `pctools` command onto a PATH
-directory that already exists.
+**One command.** The shell moved inside the module, so installing the module
+carries the GUI; `install.ps1` installs from the hash-verified release archive
+and puts a `pctools` command onto a PATH directory that already exists.
 
 **Measured performance.** Nothing here had ever been measured. The hot paths
 were all the same shape - independent I/O done one item at a time - and are now
@@ -47,8 +46,8 @@ The theme is making the install defensible to somebody who is not already
 inclined to trust it.
 
 - **A real code-signing certificate.** The release workflow already signs when
-  one is configured; nothing is configured. Signed scripts mean the Gallery
-  package verifies, SmartScreen calms down, and the `irm | iex` bootstrapper
+  one is configured; nothing is configured. Signed scripts mean SmartScreen
+  calms down, and the `irm | iex` bootstrapper
   stops being the weakest link in the chain.
 - **A winget manifest**, once releases are signed. `winget install PCTools`
   is the install command people already know, and it verifies the hash itself.

@@ -130,6 +130,7 @@
 
 - The window now opens when Start-PCTools runs in a session that has already
   shown a WinForms window, including straight after the installer.
+- install.ps1 installs from the hash-verified GitHub release only.
 - SHA256SUMS is written without a byte-order mark, so sha256sum -c accepts it.
 
 0.5.0 - one command, faster, and a great deal more of it.

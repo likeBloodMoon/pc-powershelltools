@@ -13,8 +13,8 @@
     during a DISM run that the original tools would have frozen for half an
     hour.
 
-    It now lives inside the module, so a PowerShell Gallery install carries the
-    GUI as well as the commands. Start it with Start-PCTools rather than by
+    It now lives inside the module, so installing the module carries the GUI as
+    well as the commands. Start it with Start-PCTools rather than by
     path; running this file directly still works and is what the STA relaunch
     below does.
 
@@ -103,11 +103,13 @@ catch {
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-# This may only be called before the process has created any WinForms window.
-# A console session that has already shown one - an earlier Start-PCTools, one
-# of the legacy tools, an InputBox - makes it throw, and the window never opens.
-# It only sets a default, and $false is what a process that got that far is
-# already using, so skipping it there loses nothing.
+# The next two calls may only be made before the process has created any
+# WinForms window. A console session that has already shown one - an earlier
+# Start-PCTools, one of the legacy tools, an InputBox - makes each throw, and
+# the window never opens. Both set process-wide defaults, so in that case the
+# process is already running with them (or the framework's equivalents), and
+# skipping them loses nothing. Each is guarded on its own so one cannot skip
+# the other.
 try {
     [System.Windows.Forms.Application]::SetCompatibleTextRenderingDefault($false)
 }
@@ -115,8 +117,11 @@ catch [System.InvalidOperationException] { }
 
 # Surface UI-thread exceptions instead of closing the window silently, which is
 # what the original Cleanup Tool did on any unhandled error.
-[System.Windows.Forms.Application]::SetUnhandledExceptionMode(
-    [System.Windows.Forms.UnhandledExceptionMode]::CatchException)
+try {
+    [System.Windows.Forms.Application]::SetUnhandledExceptionMode(
+        [System.Windows.Forms.UnhandledExceptionMode]::CatchException)
+}
+catch [System.InvalidOperationException] { }
 
 #endregion
 

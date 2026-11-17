@@ -15,24 +15,24 @@
     What this actually does, in order:
 
       1. Checks that this is Windows on PowerShell 5.1 or later.
-      2. Installs PCTools from the PowerShell Gallery, which is the good path -
-         Update-Module works afterwards. (The package is not Authenticode-
-         signed yet; that is the v0.6 milestone.)
-      3. If the Gallery is unreachable or PowerShellGet is missing, downloads
-         the release archive from GitHub AND its SHA256SUMS, verifies the hash,
-         and refuses to go any further if it does not match. That verification
-         is not optional and there is no switch to skip it.
+      2. Downloads the release archive from GitHub AND its SHA256SUMS,
+         verifies the hash, and refuses to go any further if it does not
+         match. That verification is not optional and there is no switch to
+         skip it.
+      3. Installs the module into your PowerShell modules folder.
       4. Installs a `pctools` command into %LOCALAPPDATA%\Microsoft\WindowsApps,
          which is already on PATH on Windows 10 and 11, so no PATH edit and no
          elevation are needed.
       5. Opens the window.
 
     The honest limitation: step 1 runs code fetched over TLS from a pinned URL,
-    which you are trusting on the strength of that TLS connection, and until
-    releases are signed so is the Gallery package. The archive fallback is
-    hash-verified. If you would rather verify everything yourself, the README
-    documents the fully manual path - download, check the hash yourself, then
-    run.
+    which you are trusting on the strength of that TLS connection. The archive
+    it installs is hash-verified. If you would rather verify the first step
+    too, the README documents the fully manual path - download, check the hash
+    yourself, then run.
+
+    Re-running this command installs the newest release over the old one, which
+    is how you update.
 
 .PARAMETER Version
     The release to install, e.g. '0.5.0'. Defaults to the newest published.
@@ -47,7 +47,8 @@
     Skip the `pctools` shim; install the module only.
 
 .PARAMETER Force
-    Reinstall even when the requested version is already present.
+    Kept so existing commands that pass it still work. Every run reinstalls the
+    requested release over whatever is there, so it changes nothing.
 
 .EXAMPLE
     irm https://raw.githubusercontent.com/likeBloodMoon/pc-powershelltools/v0.5.1/install.ps1 | iex
@@ -96,69 +97,9 @@ function Test-Windows {
     return $IsWindows
 }
 
-function Install-FromGallery {
-    <#
-        The preferred path. Returns $true when the module is installed and
-        importable, $false when the Gallery could not be used at all - a
-        missing PowerShellGet, no network, a blocked feed. A genuine install
-        failure is not swallowed: it throws.
-    #>
-    param([string]$RequestedVersion, [string]$InstallScope, [switch]$Reinstall)
-
-    if (-not (Get-Command Install-Module -ErrorAction SilentlyContinue)) {
-        Write-Step 'PowerShellGet is not available; using the release archive instead.'
-        return $false
-    }
-
-    try {
-        # TLS 1.2 is not the default on Windows PowerShell 5.1 and the Gallery
-        # has required it for years. Without this the call fails with an
-        # unhelpful "underlying connection was closed".
-        [System.Net.ServicePointManager]::SecurityProtocol =
-            [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
-    }
-    catch { }
-
-    $findParams = @{ Name = $script:ModuleName; ErrorAction = 'Stop' }
-    if ($RequestedVersion) { $findParams['RequiredVersion'] = $RequestedVersion }
-
-    try {
-        $available = Find-Module @findParams
-    }
-    catch {
-        Write-Step "The PowerShell Gallery is not reachable ($($_.Exception.Message.Trim()))."
-        return $false
-    }
-
-    $installed = Get-Module -ListAvailable -Name $script:ModuleName |
-        Sort-Object Version -Descending |
-        Select-Object -First 1
-
-    if ($installed -and $installed.Version -ge $available.Version -and -not $Reinstall) {
-        Write-Done "$($script:ModuleName) $($installed.Version) is already installed."
-        return $true
-    }
-
-    Write-Step "Installing $($script:ModuleName) $($available.Version) from the PowerShell Gallery..."
-
-    $installParams = @{
-        Name          = $script:ModuleName
-        Scope         = $InstallScope
-        Force         = $true
-        AllowClobber  = $true
-        ErrorAction   = 'Stop'
-    }
-    if ($RequestedVersion) { $installParams['RequiredVersion'] = $RequestedVersion }
-
-    Install-Module @installParams
-    Write-Done "Installed $($script:ModuleName) $($available.Version)."
-    return $true
-}
-
 function Install-FromRelease {
     <#
-        The fallback. Downloads the release archive and SHA256SUMS from the
-        GitHub release, verifies the archive against the published hash, and
+        Downloads the release archive and SHA256SUMS from the GitHub release, verifies the archive against the published hash, and
         only then extracts it. A mismatch is fatal - that is the entire point
         of this function.
     #>
@@ -297,14 +238,19 @@ if ($Scope -eq 'AllUsers') {
     }
 }
 
-$installed = Install-FromGallery -RequestedVersion $Version -InstallScope $Scope -Reinstall:$Force
-
-if (-not $installed) {
-    $installed = Install-FromRelease -RequestedVersion $Version
+# TLS 1.2 is not the default on Windows PowerShell 5.1 everywhere, and GitHub
+# has required it for years. Without this the download fails with an
+# unhelpful "underlying connection was closed".
+try {
+    [System.Net.ServicePointManager]::SecurityProtocol =
+        [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 }
+catch { }
+
+$installed = Install-FromRelease -RequestedVersion $Version
 
 if (-not $installed) {
-    throw 'PC Tools could not be installed from either the PowerShell Gallery or a GitHub release.'
+    throw 'PC Tools could not be installed from the GitHub release.'
 }
 
 Import-Module $script:ModuleName -Force -ErrorAction Stop

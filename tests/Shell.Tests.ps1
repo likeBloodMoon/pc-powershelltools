@@ -32,16 +32,21 @@ Describe 'Shell structure' {
     }
 
     It 'opens a second time in the same session' {
-        # SetCompatibleTextRenderingDefault throws once the process has created
-        # any window, so an unguarded call stopped the window opening at the end
-        # of the installer and on every Start-PCTools after the first.
-        $calls = $script:ShellAst.FindAll({
+        # Both of these throw once the process has created any window, so an
+        # unguarded call stopped the window opening at the end of the installer
+        # and on every Start-PCTools after the first. Guarding only the first
+        # just moved the crash down one line.
+        $onlyBeforeFirstWindow = 'SetCompatibleTextRenderingDefault', 'SetUnhandledExceptionMode'
+        $calls = @($script:ShellAst.FindAll({
                 param($node)
                 $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
-                $node.Member.Value -eq 'SetCompatibleTextRenderingDefault'
-            }, $true)
+                $onlyBeforeFirstWindow -contains $node.Member.Value
+            }, $true))
 
-        $calls.Count | Should -BeGreaterThan 0
+        foreach ($name in $onlyBeforeFirstWindow) {
+            @($calls | Where-Object { $_.Member.Value -eq $name }).Count |
+                Should -BeGreaterThan 0 -Because "the shell calls $name"
+        }
         foreach ($call in $calls) {
             $guarded = $false
             for ($parent = $call.Parent; $parent; $parent = $parent.Parent) {
@@ -51,8 +56,8 @@ Describe 'Shell structure' {
         }
     }
 
-    It 'ships inside the module, so a Gallery install carries the GUI' {
-        # The whole point of moving it: Install-Module PCTools then Start-PCTools,
+    It 'ships inside the module, so installing the module carries the GUI' {
+        # The whole point of moving it: install the module, then Start-PCTools,
         # with no separate archive download.
         $script:ShellPath | Should -Match '[\\/]src[\\/]PCTools[\\/]Shell[\\/]'
         $script:ExportedCommand | Should -Contain 'Start-PCTools'

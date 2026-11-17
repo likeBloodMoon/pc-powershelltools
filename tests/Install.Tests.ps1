@@ -53,9 +53,12 @@ Describe 'install.ps1' {
         }
     }
 
-    It 'prefers the PowerShell Gallery' {
-        $script:InstallText | Should -Match 'Install-Module'
-        $script:InstallText | Should -Match 'Find-Module'
+    It 'installs from the GitHub release, verified against SHA256SUMS' {
+        # The PowerShell Gallery is deliberately not used for now. If it comes
+        # back, it comes back as a decision, not by accident.
+        $script:InstallText | Should -Match 'releases/latest/download'
+        $script:InstallText | Should -Match 'SHA256SUMS'
+        $script:InstallText | Should -Not -Match 'Install-Module|Find-Module'
     }
 
     It 'enables TLS 1.2, which Windows PowerShell 5.1 does not do by default' {
